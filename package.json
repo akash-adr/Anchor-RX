@@ -1,0 +1,33 @@
+{
+  "name": "anchor-rx",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest --runInBand",
+    "seed": "node backend/db/seed/seed.js",
+    "demo:tamper": "node backend/db/seed/tamperDemo.js",
+    "api": "node backend/api/server.js",
+    "doctor-portal": "npm --prefix frontend/doctor-portal run dev"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "mysql2": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "jest": "^30.5.1"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/backend/tests"
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+# Anchor Rx — Integrity Engine: Judges' Q&A Notes
+
+## Why hash each field instead of the whole prescription?
+A single hash over the whole record can only say "this prescription is invalid." Anchor Rx hashes each field separately (patient, provider, drug, dose value, dose unit, frequency, duration, drug class), so when something changes we can say exactly **"dosage_value was changed"**, not just "record invalid." The pharmacist sees what was altered and can act on it. A single integrity root still combines all field hashes into one value that gets anchored to the ledger.
+
+## Why is there a salt, and why isn't it secret?
+Every prescription version gets its own random salt, stored right next to the data. It is there for **uniqueness, not secrecy**. Without it, every "500 mg" would produce the same dose hash, and because doses, units and frequencies have only a few common values, anyone could precompute a lookup table and read clinical values straight from the hashes. A per-version salt makes every hash unique, so that shortcut doesn't work. The salt is never regenerated. Amendments create a new version with a new salt. (The rehearsal seed data uses fixed, derived salts so demo prescriptions keep the same roots and QR codes every run. Prescriptions created through the app always get random salts.)
+
+## What does this catch, and what doesn't it?
+- **Catches:** any direct database edit to a hashed field, such as changing 500 mg → 5000 mg with raw SQL. The recomputed hash no longer matches the stored one, and verification names the field.
+- **Ignores by design:** status changes, timestamps and version bookkeeping, which change for legitimate reasons. It also ignores letter case in unit and drug class ("MG" = "mg").
+- **Honest limit:** hashing alone catches sloppy tampering; catching an attacker who rewrites the hashes too requires the external ledger anchor from Module 4. The salt and stored hashes live in the same database, so an attacker who edits the dose *and* recomputes the stored hashes would pass the database-only check. Verification accepts the ledger-anchored root as `expectedRoot`; if the recomputed root differs, it reports `rootAnchorMismatch: true` and the prescription is not valid. That is exactly why the integrity root is anchored to the ledger: a rewritten row produces a root that no longer matches the anchored one. The hashes say *which* field changed; the ledger proves *that* something changed.
+- **What it doesn't claim:** blockchain doesn't prevent database edits, it makes them detectable. And a valid hash says the prescription wasn't altered, not that it is clinically safe. That's the AI risk engine's job, and it only flags for pharmacist review.

@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "anchor-api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "api"],
+      "port": 4000
+    },
+    {
+      "name": "anchor-api-test-db",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["DB_NAME=anchor_rx_test", "node", "backend/api/server.js"],
+      "port": 4000
+    },
+    {
+      "name": "doctor-portal",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend/doctor-portal", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}
