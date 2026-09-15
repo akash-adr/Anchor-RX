@@ -392,3 +392,73 @@ describe('guard', () => {
     expect(await eventCount()).toBe(before);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Module 14 Step 5 — per-medicine tamper isolation (no change to verifyScan's logic: this proves what it reports)
+// ---------------------------------------------------------------------------
+
+describe('multi-medicine tamper isolation', () => {
+  const THREE_MEDICINES = Object.freeze({
+    patientId: 'PAT-001',
+    providerId: 'PRV-001',
+    heightCm: '172.5',
+    weightKg: '68.40',
+    medicines: [
+      { drugName: 'Amoxicillin', drugClass: 'penicillin antibiotic', dosageValue: '500', dosageUnit: 'mg', frequency: 'three times daily', durationDays: 7, quantityPrescribed: 21 },
+      { drugName: 'Paracetamol', drugClass: 'analgesic', dosageValue: '650', dosageUnit: 'mg', frequency: 'every 6 hours', durationDays: 3, quantityPrescribed: 12 },
+      { drugName: 'Cetirizine', drugClass: 'antihistamine', dosageValue: '10', dosageUnit: 'mg', frequency: 'once daily', durationDays: 5, quantityPrescribed: 5 },
+    ],
+  });
+
+  /** Raw SQL bypass of ONE medicine row (by medicine_id). Column names come only from the hashed-field whitelist. */
+  async function rawTamperMedicine(versionRow, sequenceNumber, column, value) {
+    if (!hashEngine.MEDICINE_HASHED_FIELDS.includes(column)) throw new Error(`not a medicine column: ${column}`);
+    const medicine = versionRow.medicines.find((m) => m.sequence_number === sequenceNumber);
+    const [res] = await pool.execute(`UPDATE prescription_medicine SET ${column} = ? WHERE medicine_id = ?`, [value, medicine.medicine_id]);
+    expect(res.affectedRows).toBe(1);
+  }
+
+  const otherMedicineKeys = (fields, sequenceNumber) => fields.filter((field) => field.startsWith('medicine_') && !field.startsWith(`medicine_${sequenceNumber}.`));
+
+  test('an untampered 3-medicine prescription scans verified (control)', async () => {
+    const v1 = await repository.createPrescription(THREE_MEDICINES);
+    const { result } = await scanExpectingOneEvent(await qrTextFor(v1.prescription_id, 1), { expectedVersionRowId: v1.id });
+    expect(result.scanResult).toBe('verified');
+    expect(result.fieldVerification.tamperedFields).toEqual([]);
+  });
+
+  test('tampering medicine 2 reports exactly "medicine_2.dosage_value"; medicines 1 and 3 do not appear', async () => {
+    const v1 = await repository.createPrescription(THREE_MEDICINES);
+    await rawTamperMedicine(v1, 2, 'dosage_value', '6500');
+
+    const { result } = await scanExpectingOneEvent(await qrTextFor(v1.prescription_id, 1), { expectedVersionRowId: v1.id });
+
+    expect(result.scanResult).toBe('tampered');
+    expect(result.fieldVerification.tamperedFields).toEqual(['medicine_2.dosage_value']);
+    expect(result.fieldVerification.tamperedFields.filter((f) => f.startsWith('medicine_1.') || f.startsWith('medicine_3.'))).toEqual([]);
+    expect(result.fieldVerification.integrityRootMatch).toBe(false);
+  });
+
+  test("copying ANOTHER medicine's value into medicine 2 is still attributed to medicine 2 only (hashes are position-bound)", async () => {
+    const v1 = await repository.createPrescription(THREE_MEDICINES);
+    await rawTamperMedicine(v1, 2, 'dosage_value', '500'); // medicine 1's exact dose
+
+    const { result } = await scanExpectingOneEvent(await qrTextFor(v1.prescription_id, 1), { expectedVersionRowId: v1.id });
+
+    expect(result.scanResult).toBe('tampered');
+    expect(result.fieldVerification.tamperedFields).toEqual(['medicine_2.dosage_value']);
+  });
+
+  test('two medicines tampered in different fields → each tagged with its own medicine; the untouched medicine 2 is absent', async () => {
+    const v1 = await repository.createPrescription(THREE_MEDICINES);
+    await rawTamperMedicine(v1, 3, 'frequency', 'four times daily');
+    await rawTamperMedicine(v1, 1, 'quantity_prescribed', 90);
+
+    const { result } = await scanExpectingOneEvent(await qrTextFor(v1.prescription_id, 1), { expectedVersionRowId: v1.id });
+
+    expect(result.scanResult).toBe('tampered');
+    expect(result.fieldVerification.tamperedFields).toEqual(['medicine_1.quantity_prescribed', 'medicine_3.frequency']);
+    expect(result.fieldVerification.tamperedFields.some((f) => f.startsWith('medicine_2.'))).toBe(false);
+    expect(otherMedicineKeys(result.fieldVerification.tamperedFields, 1)).toEqual(['medicine_3.frequency']);
+  });
+});

@@ -1,12 +1,14 @@
 /**
  * Prescription history / provenance timeline (preview of Module 10's audit dashboard).
- * Everything here is DISPLAY data from GET /provenance. It does not verify integrity or ledger anchors —
- * that is the pharmacy verification module's job — so nothing on this screen claims "verified".
+ * Default view: every prescription the signed-in provider ORIGINALLY issued, most recent first. Opening one (or looking
+ * up any ID) shows the existing provenance timeline below. Everything here is DISPLAY data from the API. It does not
+ * verify integrity or ledger anchors — that is the pharmacy verification module's job — so nothing here claims "verified".
  */
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { ApiError, getProvenance, getProviders } from '../api';
-import type { PrescriptionVersion, Provenance, VersionDiff } from '../types';
+import { ApiError, getProvenance, getProviderPrescriptions, getProviders } from '../api';
+import { useCurrentProvider } from '../context/ProviderContext';
+import type { PrescriptionVersion, Provenance, ProviderPrescriptionSummary, VersionDiff } from '../types';
 import { isRevocationDiff } from '../types';
 import ChangeList from './ChangeList';
 import ErrorNotice, { toApiError } from './ErrorNotice';
@@ -22,6 +24,8 @@ type Lookup =
   | { status: 'error'; prescriptionId: string; error: ApiError }
   | { status: 'ready'; provenance: Provenance };
 
+type IssuedList = { status: 'loading' } | { status: 'error'; error: ApiError } | { status: 'ready'; prescriptions: ProviderPrescriptionSummary[] };
+
 export default function HistoryView({
   initialPrescriptionId,
   onAmend,
@@ -29,8 +33,10 @@ export default function HistoryView({
   initialPrescriptionId?: string;
   onAmend?: (prescriptionId: string) => void;
 }) {
-  const [query, setQuery] = useState(initialPrescriptionId ?? '');
+  const provider = useCurrentProvider();
+  const [query, setQuery] = useState('');
   const [lookup, setLookup] = useState<Lookup>({ status: 'idle' });
+  const [issued, setIssued] = useState<IssuedList>({ status: 'loading' });
   const [providerNames, setProviderNames] = useState<Record<string, string>>({});
   const [providerNamesFailed, setProviderNamesFailed] = useState(false);
 
@@ -39,6 +45,20 @@ export default function HistoryView({
       .then((list) => setProviderNames(Object.fromEntries(list.map((p) => [p.providerId, p.name]))))
       .catch(() => setProviderNamesFailed(true)); // names are cosmetic (IDs are always shown), but say so
   }, []);
+
+  // The default, primary view: loaded automatically for the signed-in provider — no search needed.
+  const loadIssued = useCallback(async () => {
+    setIssued({ status: 'loading' });
+    try {
+      setIssued({ status: 'ready', prescriptions: await getProviderPrescriptions(provider.providerId) });
+    } catch (err) {
+      setIssued({ status: 'error', error: toApiError(err) });
+    }
+  }, [provider.providerId]);
+
+  useEffect(() => {
+    void loadIssued();
+  }, [loadIssued]);
 
   const load = useCallback(async (prescriptionId: string) => {
     setLookup({ status: 'loading', prescriptionId });
@@ -56,6 +76,11 @@ export default function HistoryView({
   const onLookup = (event: FormEvent) => {
     event.preventDefault();
     if (query.trim()) void load(query.trim());
+  };
+
+  const backToList = () => {
+    setLookup({ status: 'idle' });
+    void loadIssued(); // statuses may have changed (e.g. amended from the detail view)
   };
 
   const who = (providerId: string | null) =>
@@ -82,10 +107,11 @@ export default function HistoryView({
         )}
       </div>
 
+      {/* Secondary: jump to a known ID, including prescriptions issued by someone else. */}
       <form onSubmit={onLookup} className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="min-w-0 flex-1">
           <label htmlFor="historyLookup" className="mb-1.5 block text-sm font-medium text-slate-700">
-            Prescription ID
+            Or look up a specific prescription by ID
           </label>
           <input
             id="historyLookup"
@@ -107,9 +133,121 @@ export default function HistoryView({
         </button>
       </form>
 
-      {lookup.status === 'error' && <ErrorNotice title={`Couldn't load history for ${lookup.prescriptionId}`} error={lookup.error} />}
+      {lookup.status === 'idle' ? (
+        <IssuedPrescriptions state={issued} providerName={provider.name} onOpen={(id) => void load(id)} onRetry={() => void loadIssued()} />
+      ) : (
+        <>
+          <button type="button" onClick={backToList} className="text-sm font-medium text-teal-700 hover:underline" data-testid="back-to-issued">
+            ← All prescriptions you issued
+          </button>
+          {lookup.status === 'loading' && <div className="h-32 animate-pulse rounded-2xl bg-slate-100" aria-label={`Loading ${lookup.prescriptionId}`} />}
+          {lookup.status === 'error' && <ErrorNotice title={`Couldn't load history for ${lookup.prescriptionId}`} error={lookup.error} />}
+          {lookup.status === 'ready' && <Timeline provenance={lookup.provenance} who={who} onAmend={onAmend} />}
+        </>
+      )}
+    </section>
+  );
+}
 
-      {lookup.status === 'ready' && <Timeline provenance={lookup.provenance} who={who} onAmend={onAmend} />}
+function IssuedPrescriptions({
+  state,
+  providerName,
+  onOpen,
+  onRetry,
+}: {
+  state: IssuedList;
+  providerName: string;
+  onOpen: (prescriptionId: string) => void;
+  onRetry: () => void;
+}) {
+  return (
+    <section aria-labelledby="issued-title" className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-slate-100 px-5 py-3">
+        <h2 id="issued-title" className="font-semibold text-slate-900">
+          Prescriptions you issued
+        </h2>
+        <p className="text-xs text-slate-500">
+          Originally prescribed by {providerName} · most recent first
+          {state.status === 'ready' && state.prescriptions.length > 0 && ` · ${state.prescriptions.length} total`}
+        </p>
+      </div>
+
+      {state.status === 'loading' && (
+        <div className="space-y-2 p-5" aria-label="Loading your prescriptions">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="h-10 animate-pulse rounded-md bg-slate-100" />
+          ))}
+        </div>
+      )}
+
+      {state.status === 'error' && (
+        <div className="space-y-2 p-5">
+          <ErrorNotice title="Couldn't load the prescriptions you issued" error={state.error} />
+          <button type="button" onClick={onRetry} className="rounded-md bg-teal-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-800">
+            Retry
+          </button>
+        </div>
+      )}
+
+      {state.status === 'ready' && state.prescriptions.length === 0 && (
+        <p className="px-5 py-10 text-center text-sm text-slate-600" data-testid="issued-empty">
+          You haven't issued any prescriptions yet.
+        </p>
+      )}
+
+      {state.status === 'ready' && state.prescriptions.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left text-sm" data-testid="issued-prescriptions">
+            <thead className="text-xs uppercase tracking-wide text-slate-500">
+              <tr className="border-b border-slate-100">
+                <th className="px-5 py-2 font-semibold">Prescription</th>
+                <th className="px-3 py-2 font-semibold">Patient</th>
+                <th className="px-3 py-2 font-semibold">Medicines</th>
+                <th className="px-3 py-2 font-semibold">Status</th>
+                <th className="px-5 py-2 font-semibold">Last anchored</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {state.prescriptions.map((rx) => (
+                <tr
+                  key={rx.prescriptionId}
+                  data-testid={`issued-row-${rx.prescriptionId}`}
+                  onClick={() => onOpen(rx.prescriptionId)}
+                  className="cursor-pointer hover:bg-teal-50/50"
+                >
+                  <td className="px-5 py-3">
+                    {/* The row is clickable; this button is its keyboard/screen-reader entry point. */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpen(rx.prescriptionId);
+                      }}
+                      className="whitespace-nowrap font-mono font-semibold text-teal-800 hover:underline"
+                    >
+                      {rx.prescriptionId}
+                    </button>
+                    <span className="block text-xs text-slate-500">v{rx.latestVersionNumber}</span>
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className="whitespace-nowrap font-medium text-slate-800">{rx.patientName ?? 'Unknown patient'}</span>
+                    <span className="block font-mono text-xs text-slate-500">{rx.patientId}</span>
+                  </td>
+                  <td className="px-3 py-3 text-slate-800">{rx.drugSummary}</td>
+                  <td className="px-3 py-3">
+                    <StatusPill version={{ status: rx.currentStatus }} isLatest />
+                  </td>
+                  <td className="px-5 py-3 whitespace-nowrap text-slate-600">
+                    <time dateTime={rx.lastAnchoredAt} title={rx.lastAnchoredAt}>
+                      {formatTime(rx.lastAnchoredAt)}
+                    </time>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   );
 }
@@ -137,7 +275,7 @@ function Timeline({
         <div>
           <p className="font-mono text-lg font-semibold">{provenance.prescriptionId}</p>
           <p className="text-sm text-slate-700">
-            {first.drugName} · patient <span className="font-mono">{first.patientId}</span> · prescribed by {who(first.providerId)}
+            {first.medicines.map((m) => m.drugName).join(', ')} · patient <span className="font-mono">{first.patientId}</span> · prescribed by {who(first.providerId)}
           </p>
         </div>
         <div className="flex items-center gap-4 text-sm">
@@ -241,7 +379,7 @@ function Timeline({
   );
 }
 
-function StatusPill({ version, isLatest }: { version: PrescriptionVersion; isLatest: boolean }) {
+function StatusPill({ version, isLatest }: { version: Pick<PrescriptionVersion, 'status'>; isLatest: boolean }) {
   const { label, style } =
     version.status === 'revoked'
       ? { label: 'Revoked', style: 'bg-red-600 text-white' }
@@ -254,20 +392,33 @@ function StatusPill({ version, isLatest }: { version: PrescriptionVersion; isLat
 }
 
 function Snapshot({ version }: { version: PrescriptionVersion }) {
-  const rows: Array<[string, string]> = [
-    ['Drug', `${version.drugName} (${version.drugClass})`],
-    ['Dose', `${version.dosageValue} ${version.dosageUnit}`],
-    ['Frequency', version.frequency],
-    ['Duration', `${version.durationDays} days`],
+  const vitals: Array<[string, string]> = [
+    ['Height', version.heightCm ? `${version.heightCm} cm` : 'not recorded'],
+    ['Weight', version.weightKg ? `${version.weightKg} kg` : 'not recorded'],
   ];
   return (
-    <dl className="grid gap-x-6 gap-y-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2.5 text-sm sm:grid-cols-2">
-      {rows.map(([label, value]) => (
-        <div key={label} className="flex gap-2">
-          <dt className="w-20 shrink-0 text-slate-500">{label}</dt>
-          <dd className="font-medium text-slate-800">{value}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50/60 px-3 py-2.5 text-sm">
+      <ol className="space-y-1">
+        {version.medicines.map((m) => (
+          <li key={m.medicineId} className="flex flex-wrap gap-x-2">
+            <span className="w-5 shrink-0 text-slate-400">{m.sequenceNumber}.</span>
+            <span className="font-medium text-slate-800">
+              {m.drugName} <span className="font-normal text-slate-500">({m.drugClass})</span>
+            </span>
+            <span className="text-slate-600">
+              {m.dosageValue} {m.dosageUnit} · {m.frequency} · {m.durationDays} days · qty {m.quantityPrescribed}
+            </span>
+          </li>
+        ))}
+      </ol>
+      <dl className="grid gap-x-6 gap-y-1 sm:grid-cols-2">
+        {vitals.map(([label, value]) => (
+          <div key={label} className="flex gap-2">
+            <dt className="w-20 shrink-0 text-slate-500">{label}</dt>
+            <dd className="font-medium text-slate-800">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }

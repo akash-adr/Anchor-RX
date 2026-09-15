@@ -49,15 +49,37 @@ export interface Patient {
   name: string;
 }
 
-export interface NewPrescription {
-  patientId: string;
-  providerId: string;
+/** One medicine of a new prescription. Its position in `medicines` becomes its sequence_number (1-based). */
+export interface NewMedicine {
   drugName: string;
-  dosageValue: string;
+  drugClass: string;
+  dosageValue: string; // exact typed string, never parsed
   dosageUnit: string;
   frequency: string;
   durationDays: number;
+  quantityPrescribed: number;
+}
+
+/** POST /api/prescriptions body (Module 14). heightCm / weightKg are optional and sent as exact strings. */
+export interface NewPrescription {
+  patientId: string;
+  providerId: string;
+  heightCm?: string;
+  weightKg?: string;
+  medicines: NewMedicine[];
+}
+
+/** A stored medicine of one prescription version. medicineId belongs to that version only (copied forward as new rows). */
+export interface Medicine {
+  medicineId: number;
+  sequenceNumber: number;
+  drugName: string;
   drugClass: string;
+  dosageValue: string; // exact DECIMAL string, e.g. "500.000"
+  dosageUnit: string;
+  frequency: string;
+  durationDays: number;
+  quantityPrescribed: number;
 }
 
 /** Exactly what the QR code encodes: a pointer for server-side lookup, never clinical data. */
@@ -72,19 +94,24 @@ export interface CreatedPrescription {
   versionNumber: number;
   integrityRoot: string;
   ledgerAnchorRef: string;
+  medicines: Medicine[]; // in sequence order
   qrPayload: QrPayload | null; // null only if QR generation failed after the version was committed
   qrImage: string | null; // PNG data URL
 }
 
-// Values are sent as entered (strings); the API validates them. durationDays may be a numeric string.
+// ONE medicine per amendment (by its medicineId in the current version). Values are sent as entered; the API validates.
 export interface AmendChanges {
+  medicineId: number;
   dosageValue?: string;
   dosageUnit?: string;
   frequency?: string;
   durationDays?: number | string;
+  quantityPrescribed?: number | string;
 }
 
 export interface ChangedField {
+  medicine?: number; // sequence number of the amended medicine
+  drugName?: string;
   field: string;
   old: string | number;
   new: string | number;
@@ -120,6 +147,7 @@ export function isRevocationDiff(diff: VersionDiff): diff is RevocationDiff {
 export interface AmendResult {
   versionNumber: number;
   diff: VersionDiff;
+  medicines: Medicine[];
   qrPayload: QrPayload | null;
   qrImage: string | null;
 }
@@ -138,12 +166,9 @@ export interface PrescriptionVersion {
   parentVersionId: number | null;
   patientId: string;
   providerId: string;
-  drugName: string;
-  dosageValue: string;
-  dosageUnit: string;
-  frequency: string;
-  durationDays: number;
-  drugClass: string;
+  heightCm: string | null; // exact DECIMAL string, or null when not recorded
+  weightKg: string | null;
+  medicines: Medicine[]; // in sequence order
   status: VersionStatus;
   createdAt: string;
   amendedAt: string | null;
@@ -151,6 +176,18 @@ export interface PrescriptionVersion {
   reason: string | null;
   integrityRoot: string;
   ledgerAnchorRef: string;
+}
+
+/** GET /api/providers/:providerId/prescriptions — one row per prescription this provider ORIGINALLY issued. */
+export interface ProviderPrescriptionSummary {
+  prescriptionId: string;
+  currentStatus: VersionStatus;
+  latestVersionNumber: number;
+  drugSummary: string; // first medicine of the latest version, plus "+N more"
+  medicineCount: number;
+  patientId: string;
+  patientName: string | null;
+  lastAnchoredAt: string; // ISO UTC — the latest version's created_at (written and anchored together)
 }
 
 export interface Provenance {
@@ -185,21 +222,31 @@ export interface AuditTrustDecision {
   decidedAt: number;
 }
 
-export interface AuditVersionSnapshot {
-  status: VersionStatus;
-  providerId: string;
+export interface AuditMedicineSnapshot {
+  sequenceNumber: number;
   drugName: string;
   drugClass: string;
   dosageValue: string;
   dosageUnit: string;
   frequency: string;
   durationDays: number;
+  quantityPrescribed: number;
+}
+
+export interface AuditVersionSnapshot {
+  status: VersionStatus;
+  providerId: string;
+  heightCm: string | null;
+  weightKg: string | null;
+  medicines: AuditMedicineSnapshot[];
   route: string;
   integrityRoot: string;
   ledgerAnchorRef: string | null;
 }
 
 export interface AuditFieldChange {
+  medicine?: number;
+  drugName?: string;
   field: string;
   old: string | number | null;
   new: string | number | null;
@@ -237,7 +284,13 @@ export interface PharmacyScanEvent extends AuditEventBase {
   trustDecision?: AuditTrustDecision;
 }
 
-export type AuditEvent = VersionCreatedEvent | VersionAmendedEvent | VersionRevokedEvent | LedgerAnchoredEvent | PharmacyScanEvent;
+/** Module 14: one dispensing_record row. drugName is as stored on the medicine row. */
+export interface MedicineDispensedEvent extends AuditEventBase {
+  eventType: 'medicine_dispensed';
+  detail: { dispensingId: number; medicineId: number; sequenceNumber: number; drugName: string; quantityDispensed: number; pharmacyId: string };
+}
+
+export type AuditEvent = VersionCreatedEvent | VersionAmendedEvent | VersionRevokedEvent | LedgerAnchoredEvent | PharmacyScanEvent | MedicineDispensedEvent;
 
 export interface AuditTimeline {
   prescriptionId: string;
@@ -285,15 +338,45 @@ export interface PrescriptionDocument {
   status: VersionStatus;
   patient: { name: string; patientId: string; dob: string }; // dob "YYYY-MM-DD"
   provider: { name: string; licenseNumber: string };
-  drugName: string;
-  dosageValue: string; // exact stored string, e.g. "500.000"
-  dosageUnit: string;
-  frequency: string;
-  durationDays: number;
-  drugClass: string;
+  heightCm: string | null;
+  weightKg: string | null;
+  medicines: AuditMedicineSnapshot[]; // same shape: every medicine of this version, in sequence order
   route: string;
   integrityRoot: string;
   ledgerAnchorRef: string | null;
   issuedAt: string; // ISO UTC — identical to the issuedAt inside the QR
   qrImage: string; // PNG data URL, regenerated server-side from the stored created_at
+}
+
+// ── Module 14 — per-medicine dispensing (GET /api/dispensing/…, POST /api/dispense) ───────────────────────────────
+
+export interface DispensingMedicine {
+  medicineId: number;
+  sequenceNumber: number;
+  drugName: string; // as stored — may itself be a tampered value (see tamperedFields)
+  dosageValue: string;
+  dosageUnit: string;
+  frequency: string;
+  prescribed: number;
+  alreadyGiven: number;
+  remaining: number;
+  tampered: boolean; // fresh medicine-scoped integrity check; the server re-checks on every dispense
+  tamperedFields: string[];
+}
+
+export interface DispensingStatus {
+  prescriptionId: string;
+  versionNumber: number;
+  prescriptionVersionId: number;
+  status: VersionStatus;
+  dispensableVersion: boolean;
+  integrityUnverifiable: boolean;
+  medicines: DispensingMedicine[];
+}
+
+export interface DispenseResult {
+  medicineId: number;
+  prescribed: number;
+  alreadyGiven: number; // includes this dispense
+  remaining: number;
 }

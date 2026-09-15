@@ -10,6 +10,8 @@ import type {
   AuditSummaryRow,
   AuditTimeline,
   CreatedPrescription,
+  DispenseResult,
+  DispensingStatus,
   IntegrityRecheck,
   NewPrescription,
   Patient,
@@ -17,6 +19,7 @@ import type {
   PrescriptionDocument,
   Provenance,
   Provider,
+  ProviderPrescriptionSummary,
   RevokeResult,
   ScanResult,
 } from './types';
@@ -128,6 +131,11 @@ export function getProviders(): Promise<Provider[]> {
   return request('GET', '/api/providers');
 }
 
+/** Every prescription this provider originally issued, most recent first ([] when none). */
+export function getProviderPrescriptions(providerId: string): Promise<ProviderPrescriptionSummary[]> {
+  return request('GET', `/api/providers/${encodeURIComponent(providerId)}/prescriptions`);
+}
+
 export function getPatients(): Promise<Patient[]> {
   return request('GET', '/api/patients');
 }
@@ -162,4 +170,15 @@ export function getAuditTimeline(prescriptionId: string): Promise<AuditTimeline>
 /** LIVE: recomputes integrity from the data as stored right now. Writes nothing. */
 export function recheckIntegrity(prescriptionId: string): Promise<IntegrityRecheck> {
   return request('GET', `${auditRxPath(prescriptionId)}/recheck`);
+}
+
+// ── Module 14 — per-medicine dispensing. The server enforces every rule; the table's disabled inputs are convenience only. ──
+
+/** Quantities and fresh per-medicine integrity flags for one exact version. */
+export function getDispensingStatus(prescriptionId: string, versionNumber: number): Promise<DispensingStatus> {
+  return request('GET', `/api/dispensing/${encodeURIComponent(prescriptionId)}/versions/${versionNumber}`);
+}
+
+export function dispenseMedicine(prescriptionVersionId: number, medicineId: number, quantity: number, pharmacyId: string): Promise<DispenseResult> {
+  return request('POST', '/api/dispense', { prescriptionVersionId, medicineId, quantity, pharmacyId });
 }

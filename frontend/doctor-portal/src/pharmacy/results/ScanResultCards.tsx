@@ -27,6 +27,9 @@
  *     The decision slot above the card (TrustDecisionPlaceholder) stays identical for every result.
  *   - The mapping is documented in frontend/doctor-portal/README.md ("Scan result → visual treatment");
  *     update that table in the same change if you alter any card's severity treatment.
+ *   - Module 14: the per-medicine DispensingPanel under verified / tampered / stale_version cards is a quantity
+ *     tracker with its own server-side rules (dispensePartial), not a dispense decision derived from scanResult.
+ *     It is never rendered inside a card and never shown for forged / revoked / provider_identity_issue.
  * ============================================================================================================
  */
 
@@ -45,8 +48,9 @@ import {
   type LucideProps,
 } from 'lucide-react';
 import ChangeList from '../../components/ChangeList';
-import type { PrescriptionVersion, QrPayload, ScanResult, VersionDiff } from '../../types';
+import type { Medicine, PrescriptionVersion, QrPayload, ScanResult, VersionDiff } from '../../types';
 import { isRevocationDiff } from '../../types';
+import DispensingPanel, { dispensingVersionFor } from './DispensingPanel';
 import TrustDecisionPlaceholder from './TrustDecisionPlaceholder';
 import { usePrescriptionDetails } from './usePrescriptionDetails';
 
@@ -57,15 +61,24 @@ interface CardProps {
   onVerifyPayload: (raw: string) => void;
 }
 
-const FIELD_SENTENCES: Record<string, string> = {
-  dosage_value: 'Dosage was altered after issuance.',
-  dosage_unit: 'Dosage unit was altered after issuance.',
-  frequency: 'Frequency was altered after issuance.',
-  duration_days: 'Duration was altered after issuance.',
-  drug_name: 'Drug name was altered after issuance.',
-  drug_class: 'Drug class was altered after issuance.',
-  patient_id: 'Patient was altered after issuance.',
-  provider_id: 'Prescriber was altered after issuance.',
+// Module 2 tamper keys: prescription-level fields by name, medicine fields as "medicine_{sequenceNumber}.{field}".
+const MEDICINE_KEY = /^medicine_([1-9]\d*)\.([a-z_]+)$/;
+
+const PRESCRIPTION_FIELD_LABELS: Record<string, string> = {
+  patient_id: 'Patient',
+  provider_id: 'Prescriber',
+  height_cm: 'Recorded height',
+  weight_kg: 'Recorded weight',
+};
+
+const MEDICINE_FIELD_LABELS: Record<string, string> = {
+  drug_name: 'Drug name',
+  drug_class: 'Drug class',
+  dosage_value: 'Dosage',
+  dosage_unit: 'Dosage unit',
+  frequency: 'Frequency',
+  duration_days: 'Duration',
+  quantity_prescribed: 'Quantity prescribed',
 };
 
 const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -137,24 +150,43 @@ function Reference({ result }: { result: ScanResult }) {
   );
 }
 
+function MedicineLine({ medicine }: { medicine: Medicine }) {
+  return (
+    <li className="flex flex-wrap gap-x-2">
+      <span className="w-5 shrink-0 text-slate-400">{medicine.sequenceNumber}.</span>
+      <span className="font-medium text-slate-900">
+        {medicine.drugName} <span className="font-normal text-slate-500">({medicine.drugClass})</span>
+      </span>
+      <span className="text-slate-700">
+        {medicine.dosageValue} {medicine.dosageUnit} · {medicine.frequency} · {medicine.durationDays} days · qty {medicine.quantityPrescribed}
+      </span>
+    </li>
+  );
+}
+
 function Summary({ version, patientName }: { version: PrescriptionVersion; patientName?: string }) {
   const rows: Array<[string, ReactNode]> = [
-    ['Drug', `${version.drugName} (${version.drugClass})`],
-    ['Dose', `${version.dosageValue} ${version.dosageUnit}`],
-    ['Frequency', version.frequency],
-    ['Duration', `${version.durationDays} days`],
     ['Patient', patientName ? `${patientName} · ${version.patientId}` : version.patientId],
     ['Prescriber', version.providerId],
+    ['Height', version.heightCm ? `${version.heightCm} cm` : 'not recorded'],
+    ['Weight', version.weightKg ? `${version.weightKg} kg` : 'not recorded'],
   ];
   return (
-    <dl className="grid gap-x-6 gap-y-2 rounded-xl bg-white/80 p-4 text-sm ring-1 ring-black/5 sm:grid-cols-2" data-testid="prescription-summary">
-      {rows.map(([label, value]) => (
-        <div key={label} className="flex gap-2">
-          <dt className="w-20 shrink-0 text-slate-500">{label}</dt>
-          <dd className="font-medium text-slate-900">{value}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="space-y-3 rounded-xl bg-white/80 p-4 text-sm ring-1 ring-black/5" data-testid="prescription-summary">
+      <ol className="space-y-1">
+        {version.medicines.map((medicine) => (
+          <MedicineLine key={medicine.medicineId} medicine={medicine} />
+        ))}
+      </ol>
+      <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex gap-2">
+            <dt className="w-20 shrink-0 text-slate-500">{label}</dt>
+            <dd className="font-medium text-slate-900">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
   );
 }
 
@@ -281,9 +313,78 @@ function StaleVersionCard({ result, onVerifyPayload }: CardProps) {
 // RED — tampered (names the altered fields)
 // ---------------------------------------------------------------------------------------------------------
 
+/**
+ * Tamper keys grouped for display: prescription-level fields, then one group per medicine (canonical Module 2 order).
+ * Drug names come from the stored record of the SCANNED version (display only). A medicine whose own drug_name is among
+ * the altered fields is never named by that stored value as if it were trustworthy.
+ */
+function groupTamperedFields(fields: string[]) {
+  const prescriptionFields: string[] = [];
+  const medicines = new Map<number, Array<{ key: string; field: string }>>();
+  for (const key of fields) {
+    const match = MEDICINE_KEY.exec(key);
+    if (!match) {
+      prescriptionFields.push(key);
+      continue;
+    }
+    const sequenceNumber = Number(match[1]);
+    medicines.set(sequenceNumber, [...(medicines.get(sequenceNumber) ?? []), { key, field: match[2] }]);
+  }
+  return { prescriptionFields, medicines };
+}
+
+function TamperedMedicine({
+  sequenceNumber,
+  fields,
+  medicine,
+  detailsReady,
+}: {
+  sequenceNumber: number;
+  fields: Array<{ key: string; field: string }>;
+  medicine: Medicine | undefined;
+  detailsReady: boolean;
+}) {
+  const nameAltered = fields.some((f) => f.field === 'drug_name');
+  const removed = detailsReady && !medicine; // hashed at issuance, no longer on the record
+  // Name the actual medicine whenever its stored name can be relied on for identification; otherwise its position.
+  const who = medicine && !nameAltered ? medicine.drugName : `medicine ${sequenceNumber}`;
+
+  return (
+    <li data-testid={`tampered-medicine-${sequenceNumber}`} className="flex items-start gap-2 rounded-lg bg-white px-3 py-2 text-red-900 ring-1 ring-red-200">
+      <FileWarning aria-hidden className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+      <div className="min-w-0">
+        {removed ? (
+          <p className="text-base font-semibold">Medicine {sequenceNumber} was removed from the record after issuance.</p>
+        ) : (
+          fields.map(({ key, field }) => (
+            <p key={key} className="text-base font-semibold">
+              {field === 'drug_name' && medicine
+                ? `Drug name was altered after issuance for medicine ${sequenceNumber}. The name now on record, “${medicine.drugName}”, is not what was prescribed.`
+                : `${MEDICINE_FIELD_LABELS[field] ?? field} was altered after issuance for ${who}.`}
+            </p>
+          ))
+        )}
+        <p className="mt-0.5 text-xs text-red-800">
+          Medicine {sequenceNumber}
+          {medicine && !nameAltered && ` · ${medicine.drugName} (${medicine.drugClass})`}
+          {fields.map(({ key }) => (
+            <code key={key} className="ml-2 font-mono">
+              {key}
+            </code>
+          ))}
+        </p>
+      </div>
+    </li>
+  );
+}
+
 function TamperedCard({ result }: CardProps) {
   const fields = result.fieldVerification?.tamperedFields ?? [];
   const unverifiable = Boolean(result.fieldVerification?.unverifiable);
+  const details = usePrescriptionDetails(result.prescriptionId);
+  const version = details.status === 'ready' ? details.provenance.versions.find((v) => v.versionNumber === result.versionNumber) : undefined;
+  const { prescriptionFields, medicines } = groupTamperedFields(fields);
+  const stillMatching = version && medicines.size > 0 ? version.medicines.filter((m) => !medicines.has(m.sequenceNumber)) : [];
 
   return (
     <ResultShell
@@ -296,19 +397,33 @@ function TamperedCard({ result }: CardProps) {
     >
       {fields.length > 0 ? (
         <ul className="space-y-1.5" data-testid="tampered-fields">
-          {fields.map((field) => (
+          {prescriptionFields.map((field) => (
             <li key={field} className="flex items-start gap-2 rounded-lg bg-white px-3 py-2 text-base font-semibold text-red-900 ring-1 ring-red-200">
               <FileWarning aria-hidden className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
               <span>
-                {FIELD_SENTENCES[field] ?? `${field} was altered after issuance.`}
+                {PRESCRIPTION_FIELD_LABELS[field] ?? field} was altered after issuance.
                 <code className="ml-2 font-mono text-xs font-normal text-red-700">{field}</code>
               </span>
             </li>
+          ))}
+          {[...medicines.entries()].map(([sequenceNumber, medicineFields]) => (
+            <TamperedMedicine
+              key={sequenceNumber}
+              sequenceNumber={sequenceNumber}
+              fields={medicineFields}
+              medicine={version?.medicines.find((m) => m.sequenceNumber === sequenceNumber)}
+              detailsReady={Boolean(version)}
+            />
           ))}
         </ul>
       ) : (
         <p className="rounded-lg bg-white px-3 py-2 text-sm font-semibold text-red-900 ring-1 ring-red-200">
           {unverifiable ? 'The stored integrity data for this record is corrupted and could not be checked.' : 'The record no longer matches its integrity data.'}
+        </p>
+      )}
+      {stillMatching.length > 0 && (
+        <p className="text-xs text-red-900" data-testid="untampered-medicines">
+          Still matching issuance: {stillMatching.map((m) => m.drugName).join(', ')}.
         </p>
       )}
       <Reference result={result} />
@@ -474,6 +589,7 @@ export default function ScanResultView({
     <div className="space-y-3" data-testid="scan-result" data-scan-result={result.scanResult}>
       <TrustDecisionPlaceholder />
       <Card key={`${result.prescriptionId}:${result.versionNumber}:${result.scannedAt}`} result={result} onVerifyPayload={onVerifyPayload} />
+      {dispensingVersionFor(result) !== null && <DispensingPanel key={`dispense:${result.prescriptionId}:${result.scannedAt}`} result={result} />}
       <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-xs text-slate-500">
         <span>
           Scanned {formatWhen(result.scannedAt)} via{' '}

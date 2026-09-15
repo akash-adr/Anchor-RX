@@ -1,7 +1,8 @@
 'use strict';
 
 /**
- * Anchor Rx API — minimal HTTP layer over Modules 1–4, pharmacy scans (Module 6) and the audit dashboard (Module 10).
+ * Anchor Rx API — minimal HTTP layer over Modules 1–4, pharmacy scans (Module 6), the audit dashboard (Module 10) and
+ * per-medicine dispensing (Module 14).
  *
  * Start: npm run api   (port 4000 by default; API_PORT, DB_NAME and CORS_ORIGINS override)
  */
@@ -16,6 +17,8 @@ const { createPrescriptionRouter } = require('./routes/prescriptions');
 const { createReferenceRouter } = require('./routes/reference');
 const { createPharmacyRouter } = require('./routes/pharmacy');
 const { createAuditRouter } = require('./routes/audit');
+const { createDispensingRouter } = require('./routes/dispensing');
+const { createDispensing } = require('../dispensing/dispensePartial');
 const { createPrescriptionDocuments } = require('../documents/prescriptionDocument');
 const { createAuditTimeline } = require('../audit/timeline');
 const { createIntegrityRecheck } = require('../audit/recheck');
@@ -42,6 +45,7 @@ function createApp({
   auditTimeline = createAuditTimeline(pool, { amendmentService }),
   integrityRecheck = createIntegrityRecheck(pool, { repository, amendmentService }),
   auditSummary = createAuditSummary(pool, { integrityRecheck }),
+  dispensing = createDispensing(pool, { repository }),
   corsOrigins = parseCorsOrigins(process.env.CORS_ORIGINS),
 } = {}) {
   const app = express();
@@ -52,8 +56,9 @@ function createApp({
   app.get('/api/health', (req, res) => res.json({ ok: true }));
   app.use('/api/prescriptions', createPrescriptionRouter({ repository, amendmentService, prescriptionDocuments }));
   app.use('/api/audit', createAuditRouter({ auditTimeline, integrityRecheck, auditSummary })); // ⚠ no access control — see routes/audit.js
-  app.use('/api', createReferenceRouter({ pool }));
+  app.use('/api', createReferenceRouter({ pool, repository }));
   app.use('/api', createPharmacyRouter({ pool, pharmacyVerification }));
+  app.use('/api', createDispensingRouter({ dispensing })); // Module 14 — ⚠ no auth yet (Module 11)
 
   app.use(notFoundHandler);
   app.use(errorMiddleware);

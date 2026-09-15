@@ -1,6 +1,6 @@
 import { Fragment, type ComponentType, type ReactNode } from 'react';
-import { Ban, FilePen, FilePlus2, Link2, Scale, ScanLine, type LucideProps } from 'lucide-react';
-import type { AuditEvent, AuditTimeline, AuditTrustDecision, PharmacyScanEvent } from '../types';
+import { Ban, FilePen, FilePlus2, Link2, Pill, Scale, ScanLine, type LucideProps } from 'lucide-react';
+import type { AuditEvent, AuditMedicineSnapshot, AuditTimeline, AuditTrustDecision, PharmacyScanEvent } from '../types';
 import { Chip, DECISION_STYLE, SCAN_RESULT_STYLE, STATUS_STYLE, formatEpoch, shortHash, utcIso } from './auditUi';
 
 /**
@@ -16,11 +16,13 @@ const EVENT_STYLE: Record<AuditEvent['eventType'], { label: string; icon: Compon
   version_revoked: { label: 'Prescription revoked', icon: Ban, card: 'border-rose-300 bg-rose-50/70', badge: 'bg-rose-700 text-white' },
   ledger_anchored: { label: 'Anchored to ledger', icon: Link2, card: 'border-slate-300 bg-slate-50', badge: 'bg-slate-700 text-white' },
   pharmacy_scan: { label: 'Pharmacy scan', icon: ScanLine, card: 'border-sky-200 bg-white', badge: 'bg-sky-600 text-white' },
+  medicine_dispensed: { label: 'Medicine dispensed', icon: Pill, card: 'border-emerald-200 bg-emerald-50/40', badge: 'bg-emerald-700 text-white' },
 };
 
 function eventKey(event: AuditEvent, index: number): string {
   if (event.eventType === 'pharmacy_scan') return `scan-${event.detail.eventId}`;
   if (event.eventType === 'ledger_anchored') return `ledger-${event.detail.ledgerEntryId}`;
+  if (event.eventType === 'medicine_dispensed') return `dispensed-${event.detail.dispensingId}`;
   return `${event.eventType}-${event.versionNumber}-${index}`;
 }
 
@@ -94,6 +96,22 @@ function Facts({ items }: { items: Array<[string, ReactNode]> }) {
 }
 
 const mono = (value: string) => <span className="font-mono text-xs">{value}</span>;
+
+function MedicineList({ medicines }: { medicines: AuditMedicineSnapshot[] }) {
+  return (
+    <ol className="space-y-0.5">
+      {medicines.map((m) => (
+        <li key={m.sequenceNumber}>
+          <span className="text-slate-400">{m.sequenceNumber}.</span> <span className="font-medium">{m.drugName}</span>{' '}
+          <span className="text-slate-500">({m.drugClass})</span> — {m.dosageValue} {m.dosageUnit}, {m.frequency}, {m.durationDays} days, qty{' '}
+          {m.quantityPrescribed}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+const vital = (value: string | null, unit: string) => (value ? `${value} ${unit}` : 'not recorded');
 const hash = (value: string) => (
   <span className="font-mono text-xs" title={value}>
     {shortHash(value)}
@@ -107,10 +125,9 @@ function EventDetail({ event }: { event: AuditEvent }) {
       return (
         <Facts
           items={[
-            ['Drug', `${d.drugName} (${d.drugClass})`],
-            ['Dose', `${d.dosageValue} ${d.dosageUnit}`],
-            ['Frequency', d.frequency],
-            ['Duration', `${d.durationDays} days`],
+            ['Medicines', <MedicineList medicines={d.medicines} />],
+            ['Height', vital(d.heightCm, 'cm')],
+            ['Weight', vital(d.weightKg, 'kg')],
             ['Route', d.route],
             ['Prescriber', mono(d.providerId)],
             ['Integrity root', hash(d.integrityRoot)],
@@ -125,8 +142,14 @@ function EventDetail({ event }: { event: AuditEvent }) {
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-violet-800">Changed from v{d.fromVersion}</p>
             <ul className="mt-1 space-y-1">
-              {d.changedFields.map((change) => (
-                <li key={change.field} className="flex flex-wrap items-center gap-2">
+              {d.changedFields.map((change, index) => (
+                <li key={`${change.medicine ?? 0}-${change.field}-${index}`} className="flex flex-wrap items-center gap-2">
+                  {change.medicine !== undefined && (
+                    <span className="text-xs font-semibold text-violet-900">
+                      Medicine {change.medicine}
+                      {change.drugName ? ` · ${change.drugName}` : ''}
+                    </span>
+                  )}
                   <code className="rounded bg-violet-100 px-1.5 py-0.5 font-mono text-xs text-violet-900">{change.field}</code>
                   <span className="text-slate-500 line-through">{String(change.old ?? '—')}</span>
                   <span aria-hidden>→</span>
@@ -142,7 +165,7 @@ function EventDetail({ event }: { event: AuditEvent }) {
             items={[
               ['Amended by', d.amendedBy ? mono(d.amendedBy) : 'unknown'],
               ['Reason', d.reason ?? '—'],
-              ['Resulting dose', `${d.dosageValue} ${d.dosageUnit}, ${d.frequency}, ${d.durationDays} days`],
+              ['Medicines now', <MedicineList medicines={d.medicines} />],
               ['Integrity root', hash(d.integrityRoot)],
             ]}
           />
@@ -177,6 +200,19 @@ function EventDetail({ event }: { event: AuditEvent }) {
     }
     case 'pharmacy_scan':
       return <ScanDetail event={event} />;
+    case 'medicine_dispensed': {
+      const d = event.detail;
+      return (
+        <Facts
+          items={[
+            ['Medicine', `${d.drugName} (medicine ${d.sequenceNumber})`],
+            ['Quantity dispensed', <span className="font-mono">{d.quantityDispensed}</span>],
+            ['Pharmacy', mono(d.pharmacyId)],
+            ['Dispensing record', mono(`#${d.dispensingId}`)],
+          ]}
+        />
+      );
+    }
   }
 }
 

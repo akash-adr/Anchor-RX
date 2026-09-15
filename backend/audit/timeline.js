@@ -8,10 +8,13 @@
  *   ledger_anchored                                       Module 4 ledger_entry rows (chainPosition = global sequence_number)
  *   pharmacy_scan                                         Module 6 verification_event, joined through prescription_version_id
  *     └─ trustDecision (nested)                           Module 9 trust_decision_log, matched ONLY by verification_event_id FK
+ *   medicine_dispensed                                    Module 14 dispensing_record, joined to its prescription_medicine row
+ *                                                         (medicine name as stored) and prescription_version
  *
  * Every timestamp goes through normalizeTimestamp (epoch ms) before sorting; the timeline is sorted ascending by it.
  * Events sharing a millisecond (a version and its ledger anchor are written in one transaction) are ordered
- * deterministically: version event → ledger anchor → pharmacy scan, then version number, then source id.
+ * deterministically: version event → ledger anchor → pharmacy scan → medicine dispensed, then version number, then
+ * source id.
  *
  * Returns { prescriptionId, currentStatus, timeline, unlinkedTrustDecisions }:
  *   timeline item: { eventType, versionNumber, timestamp, detail, trustDecision? }  (trustDecision only on scans that have one)
@@ -30,6 +33,7 @@ const EVENT_TYPES = Object.freeze({
   VERSION_REVOKED: 'version_revoked',
   LEDGER_ANCHORED: 'ledger_anchored',
   PHARMACY_SCAN: 'pharmacy_scan',
+  MEDICINE_DISPENSED: 'medicine_dispensed',
 });
 
 const SAME_INSTANT_ORDER = Object.freeze({
@@ -38,6 +42,7 @@ const SAME_INSTANT_ORDER = Object.freeze({
   [EVENT_TYPES.VERSION_REVOKED]: 0,
   [EVENT_TYPES.LEDGER_ANCHORED]: 1,
   [EVENT_TYPES.PHARMACY_SCAN]: 2,
+  [EVENT_TYPES.MEDICINE_DISPENSED]: 3,
 });
 
 const LEDGER_SQL = `
@@ -67,6 +72,16 @@ const DECISIONS_SQL = `
              JOIN prescription_version pv ON pv.id = ve.prescription_version_id
             WHERE pv.prescription_id = ?)
    ORDER BY d.decision_id`;
+
+// dispensing_record has no prescription_id: join through its version row; the medicine join is the composite FK.
+const DISPENSED_SQL = `
+  SELECT dr.dispensing_id, dr.medicine_id, dr.quantity_dispensed, dr.dispensed_at, dr.dispensed_by,
+         pm.sequence_number, pm.drug_name, pv.version_number
+    FROM dispensing_record dr
+    JOIN prescription_medicine pm ON pm.medicine_id = dr.medicine_id AND pm.prescription_version_id = dr.prescription_version_id
+    JOIN prescription_version pv ON pv.id = dr.prescription_version_id
+   WHERE pv.prescription_id = ?
+   ORDER BY dr.dispensing_id`;
 
 class AuditTimelineError extends Error {
   constructor(code, message) {
@@ -184,6 +199,24 @@ function toScanEvent(row, decisionsByEventId) {
   return event;
 }
 
+function toDispensedEvent(row) {
+  const dispensingId = Number(row.dispensing_id);
+  return {
+    eventType: EVENT_TYPES.MEDICINE_DISPENSED,
+    versionNumber: row.version_number,
+    timestamp: normalizeTimestamp(row.dispensed_at),
+    detail: {
+      dispensingId,
+      medicineId: Number(row.medicine_id),
+      sequenceNumber: row.sequence_number,
+      drugName: row.drug_name, // as stored on the medicine row
+      quantityDispensed: Number(row.quantity_dispensed),
+      pharmacyId: row.dispensed_by,
+    },
+    sortId: dispensingId,
+  };
+}
+
 function compareEvents(a, b) {
   return (
     a.timestamp - b.timestamp ||
@@ -206,10 +239,11 @@ function createAuditTimeline(pool, { amendmentService = createAmendmentService(p
     }
 
     const provenance = await amendmentService.getFullProvenance(prescriptionId);
-    const [[ledgerRows], [scanRows], [decisionRows]] = await Promise.all([
+    const [[ledgerRows], [scanRows], [decisionRows], [dispensedRows]] = await Promise.all([
       pool.query(LEDGER_SQL, [prescriptionId]),
       pool.query(SCANS_SQL, [prescriptionId]),
       pool.query(DECISIONS_SQL, [prescriptionId, prescriptionId]),
+      pool.query(DISPENSED_SQL, [prescriptionId]),
     ]);
 
     // Nest decisions under scans strictly by the verification_event_id foreign key.
@@ -232,6 +266,7 @@ function createAuditTimeline(pool, { amendmentService = createAmendmentService(p
       ...toVersionEvents(provenance),
       ...ledgerRows.map(toLedgerEvent),
       ...scanRows.map((row) => toScanEvent(row, decisionsByEventId)),
+      ...dispensedRows.map(toDispensedEvent),
     ].sort(compareEvents);
 
     const timeline = events.map(({ sortId, ...event }) => event);

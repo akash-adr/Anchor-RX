@@ -91,6 +91,11 @@ export function buildPrescriptionPdf(data: PrescriptionDocument): jsPDF {
 
     let y = top + 8;
     for (const [label, value] of rows) {
+      // Many medicines can outgrow one page: continue on a new page instead of printing over the footer.
+      if (y > PAGE.height - PAGE.margin - 26) {
+        doc.addPage();
+        y = PAGE.margin + 6;
+      }
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(9);
       setColor(MUTED);
@@ -141,6 +146,8 @@ export function buildPrescriptionPdf(data: PrescriptionDocument): jsPDF {
       ['Name', data.patient.name],
       ['Patient ID', data.patient.patientId],
       ['Date of birth', formatDateOfBirth(data.patient.dob)],
+      ['Height', data.heightCm ? `${data.heightCm.replace(/\.0$/, '')} cm` : 'not recorded'],
+      ['Weight', data.weightKg ? `${data.weightKg.replace(/\.?0+$/, '')} kg` : 'not recorded'],
     ],
     left,
     leftY + 2,
@@ -161,12 +168,12 @@ export function buildPrescriptionPdf(data: PrescriptionDocument): jsPDF {
   bodyY = block(
     'Medication',
     [
-      ['Drug', data.drugName],
-      ['Dosage', formatDosage(data.dosageValue, data.dosageUnit)],
-      ['Frequency', data.frequency],
-      ['Duration', `${data.durationDays} ${data.durationDays === 1 ? 'day' : 'days'}`],
+      // One row per medicine, in sequence (prescribed) order.
+      ...data.medicines.map((m): [string, string] => [
+        `Medicine ${m.sequenceNumber}`,
+        `${m.drugName} (${m.drugClass}) — ${formatDosage(m.dosageValue, m.dosageUnit)}, ${m.frequency}, ${m.durationDays} ${m.durationDays === 1 ? 'day' : 'days'}, quantity ${m.quantityPrescribed}`,
+      ]),
       ['Route', data.route],
-      ['Drug class', data.drugClass],
     ],
     left,
     bodyY,

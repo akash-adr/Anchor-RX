@@ -314,3 +314,56 @@ test('unknown or invalid prescription ids are rejected', async () => {
   await expect(getMergedTimeline('')).rejects.toBeInstanceOf(AuditTimelineError);
   await expect(getMergedTimeline(undefined)).rejects.toMatchObject({ code: 'INVALID_PRESCRIPTION_ID' });
 });
+
+// ── Module 14 Step 7: medicine_dispensed ─────────────────────────────────────────────────────────────────────
+
+test('medicine_dispensed: one event per dispensing_record row — medicine name, quantity, pharmacy — merged by time', async () => {
+  const { createDispensing } = require('../dispensing/dispensePartial');
+  const { dispensePartial } = createDispensing(pool, { repository });
+
+  const v1 = await repository.createPrescription({
+    ...BASE_RX,
+    medicines: [
+      BASE_RX.medicines[0],
+      { drugName: 'Cetirizine', drugClass: 'antihistamine', dosageValue: '10', dosageUnit: 'mg', frequency: 'once daily', durationDays: 5, quantityPrescribed: 5 },
+    ],
+  });
+  const rx = v1.prescription_id;
+  const [paracetamol, cetirizine] = v1.medicines;
+  await pinVersionTimes(rx, 1, { createdAt: at(9, 0, 0, 0) });
+  await pinAnchoredAt(rx, 1, at(9, 0, 0, 5));
+  await insertScan(rx, 1, 'verified', at(9, 30, 0, 0));
+
+  // Real Module 14 write path, then pinned times. The 3rd record is pinned BEFORE the 2nd: order must follow time, not id.
+  await dispensePartial(v1.id, paracetamol.medicine_id, 6, PHARMACY_ID);
+  await dispensePartial(v1.id, cetirizine.medicine_id, 5, PHARMACY_ID);
+  await dispensePartial(v1.id, paracetamol.medicine_id, 6, PHARMACY_ID);
+  const [records] = await pool.query('SELECT dispensing_id FROM dispensing_record WHERE prescription_version_id = ? ORDER BY dispensing_id', [v1.id]);
+  const pinned = [at(9, 31, 0, 0), at(9, 45, 0, 0), at(9, 40, 0, 0)];
+  for (const [index, record] of records.entries()) {
+    await pool.execute('UPDATE dispensing_record SET dispensed_at = ? WHERE dispensing_id = ?', [pinned[index], record.dispensing_id]);
+  }
+
+  // Decoy: another prescription's dispense must not appear.
+  const decoy = await repository.getVersion('RX-DEMO-0002', 1);
+  await dispensePartial(decoy.id, decoy.medicines[0].medicine_id, 1, PHARMACY_ID);
+
+  const { timeline } = await getMergedTimeline(rx);
+
+  expect(timeline.map((event) => event.eventType)).toEqual([
+    'version_created', 'ledger_anchored', 'pharmacy_scan', 'medicine_dispensed', 'medicine_dispensed', 'medicine_dispensed',
+  ]);
+  const dispensed = timeline.filter((event) => event.eventType === EVENT_TYPES.MEDICINE_DISPENSED);
+  expect(dispensed.map((event) => [event.detail.drugName, event.detail.sequenceNumber, event.detail.quantityDispensed, event.timestamp])).toEqual([
+    ['Paracetamol', 1, 6, at(9, 31, 0, 0).getTime()],
+    ['Paracetamol', 1, 6, at(9, 40, 0, 0).getTime()],
+    ['Cetirizine', 2, 5, at(9, 45, 0, 0).getTime()],
+  ]);
+  expect(dispensed[0]).toEqual({
+    eventType: 'medicine_dispensed',
+    versionNumber: 1,
+    timestamp: at(9, 31, 0, 0).getTime(),
+    detail: { dispensingId: records[0].dispensing_id, medicineId: paracetamol.medicine_id, sequenceNumber: 1, drugName: 'Paracetamol', quantityDispensed: 6, pharmacyId: PHARMACY_ID },
+  });
+  expect(typeof dispensed[0].timestamp).toBe('number'); // normalized like every other source
+});

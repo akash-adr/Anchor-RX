@@ -58,6 +58,24 @@ export default function ConfirmationCard({
             <dd className="mt-0.5 font-medium">v{result.versionNumber}</dd>
           </div>
           <div>
+            <dt className="text-slate-500">
+              Medicines ({result.medicines.length}) — in prescribed order
+            </dt>
+            <dd className="mt-1">
+              <ol className="space-y-1" data-testid="confirmed-medicines">
+                {result.medicines.map((m) => (
+                  <li key={m.medicineId} data-sequence={m.sequenceNumber} className="flex flex-wrap gap-x-2">
+                    <span className="w-5 shrink-0 text-slate-400">{m.sequenceNumber}.</span>
+                    <span className="font-medium text-slate-900">{m.drugName}</span>
+                    <span className="text-slate-600">
+                      {m.dosageValue} {m.dosageUnit} · {m.frequency} · {m.durationDays} days · qty {m.quantityPrescribed}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </dd>
+          </div>
+          <div>
             <dt className="text-slate-500">Integrity root (SHA-256)</dt>
             <dd className="mt-1 flex flex-wrap items-center gap-2">
               <code

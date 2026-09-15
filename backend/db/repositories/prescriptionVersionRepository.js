@@ -90,6 +90,24 @@ const SELECT_LATEST_FOR_UPDATE_SQL = `
 
 const NEW_VERSION_STATUSES = Object.freeze(['active', 'revoked']);
 
+// "Issued by" = the ORIGINAL prescriber: version 1's provider_id (never amended_by_provider_id, never a delegate).
+// One row per prescription (prescription_id + version_number is unique), summarizing its LATEST version:
+// first medicine via the sequence_number = 1 join, medicine count, patient name. The latest version's created_at is
+// when it was written and anchored (same transaction); amended_at is always NULL on a latest version.
+const PRESCRIPTIONS_BY_PROVIDER_SQL = `
+  SELECT latest.prescription_id, latest.version_number, latest.status, latest.created_at AS last_anchored_at,
+         latest.patient_id, pt.name AS patient_name, first_medicine.drug_name AS first_drug_name,
+         (SELECT COUNT(*) FROM prescription_medicine counted WHERE counted.prescription_version_id = latest.id) AS medicine_count
+    FROM prescription_version origin
+    JOIN prescription_version latest
+      ON latest.prescription_id = origin.prescription_id
+     AND latest.version_number = (SELECT MAX(v.version_number) FROM prescription_version v WHERE v.prescription_id = origin.prescription_id)
+    LEFT JOIN patient pt ON pt.patient_id = latest.patient_id
+    LEFT JOIN prescription_medicine first_medicine
+      ON first_medicine.prescription_version_id = latest.id AND first_medicine.sequence_number = 1
+   WHERE origin.version_number = 1 AND origin.provider_id = ?
+   ORDER BY latest.created_at DESC, latest.prescription_id ASC`;
+
 // camelCase input key → column.
 const PRESCRIPTION_INPUT = Object.freeze({ patientId: 'patient_id', providerId: 'provider_id', heightCm: 'height_cm', weightKg: 'weight_kg' });
 const MEDICINE_INPUT = Object.freeze({
@@ -580,8 +598,37 @@ function createPrescriptionVersionRepository(
     }));
   }
 
+  /**
+   * Every prescription this provider ORIGINALLY issued (version 1's provider_id), most recently anchored first.
+   * Prescriptions they only amended as a delegate are excluded. Read-only.
+   * @returns {Promise<Array<{ prescriptionId, currentStatus, latestVersionNumber, drugSummary, medicineCount, patientId,
+   *          patientName, lastAnchoredAt }>|null>} null when no such provider exists; [] when they issued nothing
+   */
+  async function getPrescriptionsByProvider(providerId) {
+    const id = normalizeProviderRef('providerId', providerId);
+    const [providers] = await pool.execute('SELECT provider_id FROM provider WHERE provider_id = ?', [id]);
+    if (providers.length === 0) return null;
+
+    const [rows] = await pool.execute(PRESCRIPTIONS_BY_PROVIDER_SQL, [id]);
+    return rows.map((row) => {
+      const medicineCount = Number(row.medicine_count);
+      const more = medicineCount > 1 ? ` +${medicineCount - 1} more` : '';
+      return {
+        prescriptionId: row.prescription_id,
+        currentStatus: row.status,
+        latestVersionNumber: row.version_number,
+        drugSummary: row.first_drug_name === null ? '(no medicines on record)' : `${row.first_drug_name}${more}`,
+        medicineCount,
+        patientId: row.patient_id,
+        patientName: row.patient_name,
+        lastAnchoredAt: row.last_anchored_at,
+      };
+    });
+  }
+
   return Object.freeze({
     createPrescription,
+    getPrescriptionsByProvider, // read-only; Doctor Portal "issued by me" list
     amendPrescription,
     insertRevocationVersion,
     getPrescriptionChain,
