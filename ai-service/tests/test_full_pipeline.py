@@ -23,19 +23,19 @@ from rules.rule_engine import EXPLANATIONS
 
 AI_SERVICE_ROOT = Path(__file__).resolve().parents[1]
 
-# Hand-constructed: Cefalexin 500 mg twice daily for 7 days, 45-year-old, 72.5 kg, broad GP history, no recent Rx.
+# Hand-constructed: Ciprofloxacin 500 mg twice daily for 7 days, 45-year-old, 72.5 kg, broad GP history, no recent Rx.
 CLEAN_PAYLOAD = {
     "payloadVersion": 1, "prescriptionId": "RX-HAND-0001", "versionNumber": 1, "patientId": "PAT-HAND-01",
     "providerId": "PRV-HAND-01", "referenceTime": "2026-09-15T09:30:00.000Z",
-    "drugName": "Cefalexin", "drugClass": "cephalosporin", "doseValue": "500.000", "doseUnit": "mg",
+    "drugName": "Ciprofloxacin", "drugClass": "antibiotic", "doseValue": "500.000", "doseUnit": "mg",
     "frequency": "twice daily", "durationDays": 7, "route": "oral",
     "patientAge": 45, "patientWeight": 72.5, "patientWeightIsDefault": False,
     "drugCombinationFlag": False, "overlappingPrescriptionIds": [],
-    "providerDrugClassHistory": {"analgesic": 22, "penicillin antibiotic": 18, "cephalosporin": 9, "nsaid": 11, "statin": 14, "biguanide": 8},
+    "providerDrugClassHistory": {"antibiotic": 27, "nsaid": 11, "ppi": 9, "statin": 14, "antidiabetic": 8, "antihistamine": 6},
     "patientVelocity": 0,
 }
 
-# Same prescription with 4 000 mg per dose (4× the synthetic typical max of 1 000 mg) AND another active cephalosporin.
+# Same prescription with 4 000 mg per dose (5.3× the 750 mg reference maximum) AND another active antibiotic.
 DOSE_AND_DUPLICATION_PAYLOAD = {
     **CLEAN_PAYLOAD, "prescriptionId": "RX-HAND-0002",
     "doseValue": "4000.000", "drugCombinationFlag": True, "overlappingPrescriptionIds": ["RX-HAND-0003"],
@@ -109,6 +109,18 @@ def test_full_held_out_eval_set_has_zero_fingerprint_overlap_with_training(artif
 def test_train_anomalous_and_normal_holdout_seeds_are_all_different(artifacts):
     assert artifacts.metadata["corpus"]["seed"] == TRAINING_SEED
     assert len({TRAINING_SEED, ANOMALOUS_SEED, NORMAL_HOLDOUT_SEED}) == 3
+
+
+def test_zytee_falls_through_to_the_unknown_drug_fallback_end_to_end(artifacts):
+    """Zytee (topical gel) is deliberately absent from DRUG_REFERENCE: scoring must not throw, must not invent a range."""
+    payload = {**CLEAN_PAYLOAD, "prescriptionId": "RX-HAND-ZYTEE", "drugName": "Zytee", "drugClass": "ulcer",
+               "doseValue": "1.000", "doseUnit": "g", "frequency": "three times daily", "durationDays": 5}
+    result = score_prescription(payload, artifacts)
+    print("\nzytee:", json.dumps(result))
+    skipped = [{"rule": rule, "reason": "'Zytee' is not in the dosage reference"} for rule in ("dose_limit", "frequency_range", "duration_range")]
+    assert result["details"]["rules_not_evaluated"] == skipped
+    assert result["details"]["rule_subscore"] == 0
+    assert result["risk_band"] in {"low", "review", "high"} and 0 <= result["risk_score"] <= 100
 
 
 def test_anomalous_generator_does_not_import_the_training_generator():

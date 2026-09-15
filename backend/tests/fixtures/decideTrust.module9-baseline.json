@@ -1,0 +1,1152 @@
+{
+  "description": "decideTrust outputs for every Module 9 test input, generated from the pre-Module-15 source",
+  "source": "git HEAD de702f6 (pre-Module-15; decideTrust last changed in a000724) backend/trust/decideTrust.js",
+  "sourceSha256": "64eba943be8fcdf4e6bf53ab6433d8165468fb56c45979fa32aa43d1fbda0adc",
+  "fixedNow": "2026-09-15T10:00:00.000Z",
+  "cases": [
+    {
+      "label": "tampered + populated low 5",
+      "output": {
+        "trustDecision": "Block",
+        "primaryReason": "tampered",
+        "scanResult": "tampered",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "forged + populated low 5",
+      "output": {
+        "trustDecision": "Block",
+        "primaryReason": "forged",
+        "scanResult": "forged",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "provider_identity_issue + populated low 5",
+      "output": {
+        "trustDecision": "Block",
+        "primaryReason": "provider_identity_issue",
+        "scanResult": "provider_identity_issue",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "unknown_prescription + populated low 5",
+      "output": {
+        "trustDecision": "Block",
+        "primaryReason": "unknown_prescription",
+        "scanResult": "unknown_prescription",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "malformed_qr + populated low 5",
+      "output": {
+        "trustDecision": "Block",
+        "primaryReason": "malformed_qr",
+        "scanResult": "malformed_qr",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "revoked + populated low 5",
+      "output": {
+        "trustDecision": "Block",
+        "primaryReason": "revoked",
+        "scanResult": "revoked",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "forged + null risk",
+      "output": {
+        "trustDecision": "Block",
+        "primaryReason": "forged",
+        "scanResult": "forged",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "forged + undefined risk",
+      "output": {
+        "trustDecision": "Block",
+        "primaryReason": "forged",
+        "scanResult": "forged",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "tampered with mismatched field + high 99",
+      "output": {
+        "trustDecision": "Block",
+        "primaryReason": "tampered",
+        "scanResult": "tampered",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": false,
+            "mismatchedFields": [
+              "dosage_value"
+            ]
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "malformed_qr minimal scan + low 1",
+      "output": {
+        "trustDecision": "Block",
+        "primaryReason": "malformed_qr",
+        "scanResult": "malformed_qr",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": null,
+          "ledgerVerification": null,
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + low 12",
+      "output": {
+        "trustDecision": "Dispense",
+        "primaryReason": "clean",
+        "scanResult": "verified",
+        "riskScore": 12,
+        "riskBand": "low",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + review 45",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "reviewRiskScore",
+        "scanResult": "verified",
+        "riskScore": 45,
+        "riskBand": "review",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + high 100",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "highRiskScore",
+        "scanResult": "verified",
+        "riskScore": 100,
+        "riskBand": "high",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + low 0",
+      "output": {
+        "trustDecision": "Dispense",
+        "primaryReason": "clean",
+        "scanResult": "verified",
+        "riskScore": 0,
+        "riskBand": "low",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + review 70",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "reviewRiskScore",
+        "scanResult": "verified",
+        "riskScore": 70,
+        "riskBand": "review",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + high 71",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "highRiskScore",
+        "scanResult": "verified",
+        "riskScore": 71,
+        "riskBand": "high",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + review 50",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "reviewRiskScore",
+        "scanResult": "verified",
+        "riskScore": 50,
+        "riskBand": "review",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + low 3",
+      "output": {
+        "trustDecision": "Dispense",
+        "primaryReason": "clean",
+        "scanResult": "verified",
+        "riskScore": 3,
+        "riskBand": "low",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + null",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "verified",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + undefined",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "verified",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + unknown band",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "verified",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + missing score",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "verified",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + NaN score",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "verified",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + score above 100",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "verified",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + reasons not an array",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "verified",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "verified + snake_case service shape",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "verified",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + low 12",
+      "output": {
+        "trustDecision": "Dispense",
+        "primaryReason": "clean",
+        "scanResult": "stale_version",
+        "riskScore": 12,
+        "riskBand": "low",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + review 45",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "reviewRiskScore",
+        "scanResult": "stale_version",
+        "riskScore": 45,
+        "riskBand": "review",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + high 100",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "highRiskScore",
+        "scanResult": "stale_version",
+        "riskScore": 100,
+        "riskBand": "high",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + low 0",
+      "output": {
+        "trustDecision": "Dispense",
+        "primaryReason": "clean",
+        "scanResult": "stale_version",
+        "riskScore": 0,
+        "riskBand": "low",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + review 70",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "reviewRiskScore",
+        "scanResult": "stale_version",
+        "riskScore": 70,
+        "riskBand": "review",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + high 71",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "highRiskScore",
+        "scanResult": "stale_version",
+        "riskScore": 71,
+        "riskBand": "high",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + review 50",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "reviewRiskScore",
+        "scanResult": "stale_version",
+        "riskScore": 50,
+        "riskBand": "review",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + low 3",
+      "output": {
+        "trustDecision": "Dispense",
+        "primaryReason": "clean",
+        "scanResult": "stale_version",
+        "riskScore": 3,
+        "riskBand": "low",
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": [
+            {
+              "source": "rule_engine",
+              "feature": "dose_value",
+              "explanation": "Dose exceeds the typical maximum for this medication."
+            },
+            {
+              "source": "ml_model",
+              "feature": "patient_velocity",
+              "explanation": "Patient has received an unusually high number of prescriptions in the last 30 days."
+            }
+          ]
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + null",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "stale_version",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + undefined",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "stale_version",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + unknown band",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "stale_version",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + missing score",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "stale_version",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + NaN score",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "stale_version",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + score above 100",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "stale_version",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + reasons not an array",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "stale_version",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "stale_version + snake_case service shape",
+      "output": {
+        "trustDecision": "Review",
+        "primaryReason": "riskEngineUnavailable",
+        "scanResult": "stale_version",
+        "riskScore": null,
+        "riskBand": null,
+        "supportingDetail": {
+          "fieldVerification": {
+            "valid": true,
+            "mismatchedFields": []
+          },
+          "ledgerVerification": {
+            "chainIntact": true,
+            "integrityRootMatch": true
+          },
+          "riskReasons": null
+        },
+        "decidedAt": "2026-09-15T10:00:00.000Z"
+      }
+    },
+    {
+      "label": "invalid scan input: null",
+      "error": {
+        "name": "TrustDecisionError",
+        "code": "INVALID_SCAN_RESULT",
+        "message": "decideTrust requires a verifyScan() result with a scanResult string"
+      }
+    },
+    {
+      "label": "invalid scan input: undefined",
+      "error": {
+        "name": "TrustDecisionError",
+        "code": "INVALID_SCAN_RESULT",
+        "message": "decideTrust requires a verifyScan() result with a scanResult string"
+      }
+    },
+    {
+      "label": "invalid scan input: string",
+      "error": {
+        "name": "TrustDecisionError",
+        "code": "INVALID_SCAN_RESULT",
+        "message": "decideTrust requires a verifyScan() result with a scanResult string"
+      }
+    },
+    {
+      "label": "invalid scan input: empty object",
+      "error": {
+        "name": "TrustDecisionError",
+        "code": "INVALID_SCAN_RESULT",
+        "message": "decideTrust requires a verifyScan() result with a scanResult string"
+      }
+    },
+    {
+      "label": "invalid scan input: numeric scanResult",
+      "error": {
+        "name": "TrustDecisionError",
+        "code": "INVALID_SCAN_RESULT",
+        "message": "decideTrust requires a verifyScan() result with a scanResult string"
+      }
+    },
+    {
+      "label": "unknown scanResult \"pending\"",
+      "error": {
+        "name": "TrustDecisionError",
+        "code": "UNKNOWN_SCAN_RESULT",
+        "message": "Unrecognised scanResult \"pending\""
+      }
+    }
+  ]
+}

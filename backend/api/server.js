@@ -19,6 +19,11 @@ const { createPharmacyRouter } = require('./routes/pharmacy');
 const { createAuditRouter } = require('./routes/audit');
 const { createDispensingRouter } = require('./routes/dispensing');
 const { createDispensing } = require('../dispensing/dispensePartial');
+const { createMedicineScorer } = require('../ml/scoreAllMedicines');
+const { createPreviewCache } = require('../ml/previewCache');
+const { createRiskPreviewService } = require('../ml/riskPreview');
+const { createPharmacistRiskDisplay } = require('../ml/pharmacistRiskDisplay');
+const { createLiveDataBridge } = require('../ml/liveDataBridge');
 const { createPrescriptionDocuments } = require('../documents/prescriptionDocument');
 const { createAuditTimeline } = require('../audit/timeline');
 const { createIntegrityRecheck } = require('../audit/recheck');
@@ -46,6 +51,11 @@ function createApp({
   integrityRecheck = createIntegrityRecheck(pool, { repository, amendmentService }),
   auditSummary = createAuditSummary(pool, { integrityRecheck }),
   dispensing = createDispensing(pool, { repository }),
+  medicineScorer = createMedicineScorer(pool),
+  previewCache = createPreviewCache(),
+  liveDataBridge = createLiveDataBridge(pool),
+  riskPreview = createRiskPreviewService(pool, { repository, medicineScorer, previewCache, liveDataBridge }),
+  pharmacistRiskDisplay = createPharmacistRiskDisplay(pool),
   corsOrigins = parseCorsOrigins(process.env.CORS_ORIGINS),
 } = {}) {
   const app = express();
@@ -54,10 +64,10 @@ function createApp({
   app.use(express.json({ limit: '100kb' }));
 
   app.get('/api/health', (req, res) => res.json({ ok: true }));
-  app.use('/api/prescriptions', createPrescriptionRouter({ repository, amendmentService, prescriptionDocuments }));
+  app.use('/api/prescriptions', createPrescriptionRouter({ repository, amendmentService, prescriptionDocuments, riskPreview }));
   app.use('/api/audit', createAuditRouter({ auditTimeline, integrityRecheck, auditSummary })); // ⚠ no access control — see routes/audit.js
   app.use('/api', createReferenceRouter({ pool, repository }));
-  app.use('/api', createPharmacyRouter({ pool, pharmacyVerification }));
+  app.use('/api', createPharmacyRouter({ pool, pharmacyVerification, pharmacistRiskDisplay }));
   app.use('/api', createDispensingRouter({ dispensing })); // Module 14 — ⚠ no auth yet (Module 11)
 
   app.use(notFoundHandler);

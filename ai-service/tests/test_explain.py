@@ -99,7 +99,7 @@ def test_contributions_point_at_the_inputs_that_were_made_unusual(artifacts):
 
 def test_correlated_features_are_reset_together(artifacts):
     features = extract_features(extreme_payload(), artifacts.corpus_stats)  # 50000 mg, 96/day, 45 kg, iv
-    typical = artifacts.feature_baselines.for_drug_class("penicillin antibiotic")
+    typical = artifacts.feature_baselines.for_drug_class("antibiotic")
     occlusions = {o.group: o for o in build_occlusions(features, artifacts.feature_baselines)}
 
     dose = occlusions["dose"]
@@ -115,6 +115,6 @@ def test_correlated_features_are_reset_together(artifacts):
 
 
 def test_below_typical_values_of_risk_only_features_are_never_reasons(artifacts):
-    features = extract_features(make_payload(patientVelocity=0, providerDrugClassHistory={"statin": 100}), artifacts.corpus_stats)
+    features = extract_features(make_payload(patientVelocity=0, providerDrugClassHistory={"antibiotic": 100}), artifacts.corpus_stats)
     groups = {o.group for o in build_occlusions(features, artifacts.feature_baselines)}
     assert not groups & {"velocity", "provider_pattern", "duplication"}

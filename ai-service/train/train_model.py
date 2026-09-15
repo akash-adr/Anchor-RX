@@ -17,6 +17,8 @@ Run from ai-service/:
 
 from __future__ import annotations
 
+import sys
+
 import argparse
 import json
 import platform
@@ -30,6 +32,9 @@ import pandas as pd
 import sklearn
 from sklearn.ensemble import IsolationForest
 from sklearn.pipeline import Pipeline
+
+if __package__ in (None, ""):  # run as a file (python3 <dir>/<script>.py): make ai-service/ importable, like `python -m`
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from data.generate_normal_corpus import (
     DEFAULT_CORPUS_PATH,

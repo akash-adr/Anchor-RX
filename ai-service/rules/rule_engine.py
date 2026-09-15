@@ -1,8 +1,9 @@
 """
 Anchor Rx — Module 8 rule engine.
 
-Hand-written, deterministic checks against data/dosage_reference.py. That table is SYNTHETIC and illustrative,
-so these rules demonstrate an explainable review layer — they are not clinical dosing limits. The rule engine does
+Hand-written, deterministic checks against data/dosage_reference.py. That table holds simplified, commonly-cited adult
+typical ranges for demonstration only, so these rules demonstrate an explainable review layer — they are not
+individualized clinical dosing limits. The rule engine does
 not use the corpus or the Isolation Forest, and it never decides Dispense/Review/Block.
 
 Each rule function returns RuleResult(fired, points, explanation). run_rule_engine runs every rule and returns:
@@ -55,7 +56,8 @@ EXPLANATIONS = {
     "frequency_below": "Dosing frequency is well below the typical range for this medication.",
     "duration_above": "Treatment duration is well beyond the typical course length for this medication.",
     "duration_below": "Treatment duration is well below the typical course length for this medication.",
-    "drug_duplication": "Patient has another active prescription in the same drug class.",
+    # drug_combination_flag has two sources (Module 15): another active prescription, or another medicine on this one.
+    "drug_duplication": "Another active prescription or another medicine on this prescription is in the same drug class.",
 }
 
 REQUIRED_FEATURES = ("dose_value", "frequency", "duration_days", "drug_combination_flag")
@@ -104,7 +106,7 @@ def _lookup(dosage_reference: Mapping[str, DrugReference], drug_name: str) -> Dr
 
 
 def _not_in_reference(context: RuleContext) -> str:
-    return f"'{context.drug_name}' is not in the synthetic dosage reference"
+    return f"'{context.drug_name}' is not in the dosage reference"
 
 
 # ── Rule evaluations ─────────────────────────────────────────────────────────────────────────────────────────
@@ -113,7 +115,12 @@ def _evaluate_dose_limit(features: Mapping[str, Any], dosage_reference: Mapping[
     ref = _lookup(dosage_reference, context.drug_name)
     if ref is None:
         return _Evaluation(NOT_FIRED, _not_in_reference(context))
-    if context.dose_unit.strip().lower() not in MASS_UNITS:
+    # Compare in the REFERENCE's unit: an mg reference accepts any mass unit (features already converted it to mg);
+    # any other reference unit (e.g. ml for a liquid) accepts only that same unit. Never assume mg for every drug.
+    prescribed_unit = context.dose_unit.strip().lower()
+    reference_unit = ref.unit.strip().lower()
+    comparable = (reference_unit == "mg" and prescribed_unit in MASS_UNITS) or prescribed_unit == reference_unit
+    if not comparable:
         return _Evaluation(NOT_FIRED, f"dose unit '{context.dose_unit}' cannot be compared with a {ref.unit} limit")
     dose = features["dose_value"]
     if dose is None:
@@ -191,7 +198,7 @@ def frequency_duration_range_check(features: Mapping[str, Any], dosage_reference
 
 
 def drug_duplication_check(features: Mapping[str, Any]) -> RuleResult:
-    """Fires if the patient has another ACTIVE prescription in the same drug class (drug_combination_flag)."""
+    """Fires on drug_combination_flag: another ACTIVE prescription, or another medicine on this prescription, shares the class."""
     _require(features)
     return _evaluate_duplication(features).result
 

@@ -18,14 +18,14 @@ from rules.rule_engine import (
     run_rule_engine,
 )
 
-AMOXICILLIN = RuleContext(drug_name="Amoxicillin", dose_unit="mg")  # synthetic ref: 250–1000 mg, 2–3/day (max 3), 5–14 days
+AMOXICILLIN = RuleContext(drug_name="Amoxicillin", dose_unit="mg")  # reference: 250–500 mg, 2–3/day (max 3), 5–14 days
 
 
 def clean_features(**overrides):
     """Amoxicillin 500 mg three times daily for 7 days — inside every synthetic range, no duplication."""
     base = {
         "dose_value": 500.0, "dose_per_kg": 500.0 / 70, "frequency": 3.0, "duration_days": 7.0, "route": "oral",
-        "age": 40.0, "weight": 70.0, "drug_class": "penicillin antibiotic", "drug_combination_flag": 0,
+        "age": 40.0, "weight": 70.0, "drug_class": "antibiotic", "drug_combination_flag": 0,
         "drug_rarity_score": 0.3, "provider_pattern_score": 0.0, "patient_velocity": 0.0, "dose_frequency_product": 1500.0,
     }
     return {**base, **overrides}
@@ -51,18 +51,18 @@ def test_dose_limit_fires_above_typical_max():
 
 
 def test_dose_exactly_at_typical_max_does_not_fire():
-    assert dose_limit_check(clean_features(dose_value=1000.0), DOSAGE_REFERENCE, AMOXICILLIN).fired is False
+    assert dose_limit_check(clean_features(dose_value=500.0), DOSAGE_REFERENCE, AMOXICILLIN).fired is False
 
 
 def test_dose_in_grams_is_checked_after_conversion_to_mg():
     payload = {
-        "drugName": "Amoxicillin", "drugClass": "penicillin antibiotic", "doseValue": "1.500", "doseUnit": "g",
+        "drugName": "Amoxicillin", "drugClass": "antibiotic", "doseValue": "1.500", "doseUnit": "g",
         "frequency": "TDS", "durationDays": 7, "route": "oral", "patientAge": 40, "patientWeight": 70.0,
     }
     features = extract_features(payload, CorpusStats())
     context = RuleContext.from_payload(payload)
     assert dose_limit_check(features, DOSAGE_REFERENCE, context).fired is True
-    at_limit = extract_features({**payload, "doseValue": "1.000"}, CorpusStats())
+    at_limit = extract_features({**payload, "doseValue": "0.500"}, CorpusStats())  # 0.5 g = the 500 mg maximum
     assert dose_limit_check(at_limit, DOSAGE_REFERENCE, context).fired is False
 
 
@@ -124,7 +124,7 @@ def test_unparseable_frequency_is_reported_as_not_evaluated():
 @pytest.mark.parametrize("flag", [1, True])
 def test_drug_duplication_fires_when_flag_is_set(flag):
     assert drug_duplication_check(clean_features(drug_combination_flag=flag)) == (
-        True, DRUG_DUPLICATION_POINTS, "Patient has another active prescription in the same drug class.",
+        True, DRUG_DUPLICATION_POINTS, "Another active prescription or another medicine on this prescription is in the same drug class.",
     )
 
 
@@ -171,7 +171,25 @@ def test_unknown_drug_only_runs_the_duplication_rule_and_says_so():
     result = run_rule_engine(clean_features(dose_value=99999.0, drug_combination_flag=1), DOSAGE_REFERENCE, context)
     assert result["subScore"] == DRUG_DUPLICATION_POINTS
     assert [item["rule"] for item in result["notEvaluated"]] == ["dose_limit", "frequency_range", "duration_range"]
-    assert all("not in the synthetic dosage reference" in item["reason"] for item in result["notEvaluated"])
+    assert all("not in the dosage reference" in item["reason"] for item in result["notEvaluated"])
+
+
+def test_liquid_reference_is_compared_in_ml_and_never_against_a_mg_dose():
+    ml = RuleContext(drug_name="Diphenhydramine", dose_unit="ml")  # reference: 10–20 ml, 3–4/day, 3–7 days
+    assert dose_limit_check(clean_features(dose_value=20.0), DOSAGE_REFERENCE, ml).fired is False
+    assert dose_limit_check(clean_features(dose_value=25.0), DOSAGE_REFERENCE, ml) == (True, DOSE_LIMIT_POINTS, EXPLANATIONS["dose_limit"])
+    # A mg dose is NOT compared with the ml limit (25 mg is not "25 ml") — reported as not evaluated instead.
+    mg = RuleContext(drug_name="Diphenhydramine", dose_unit="mg")
+    result = run_rule_engine(clean_features(dose_value=25.0), DOSAGE_REFERENCE, mg)
+    assert result["firedRules"] == []
+    assert result["notEvaluated"] == [{"rule": "dose_limit", "reason": "dose unit 'mg' cannot be compared with a ml limit"}]
+
+
+def test_zytee_is_not_in_the_reference_so_dose_frequency_and_duration_rules_are_skipped_not_guessed():
+    context = RuleContext(drug_name="Zytee", dose_unit="g")
+    result = run_rule_engine(clean_features(dose_value=1000.0), DOSAGE_REFERENCE, context)
+    assert result["subScore"] == 0 and result["firedRules"] == []
+    assert result["notEvaluated"] == [{"rule": rule, "reason": "'Zytee' is not in the dosage reference"} for rule in ("dose_limit", "frequency_range", "duration_range")]
 
 
 def test_drug_name_lookup_is_case_and_whitespace_insensitive():

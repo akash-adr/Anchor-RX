@@ -2,7 +2,7 @@
 
 const express = require('express');
 const { toCreateInput, toAmendChanges, presentMedicine, presentVersion, presentDiff } = require('../presenters');
-const { ApiError, handleCreateError, handleChangeError, handleReadError } = require('../errors');
+const { ApiError, handleCreateError, handleChangeError, handleReadError, handleRiskPreviewError } = require('../errors');
 const { buildVersionQr } = require('../../qr/qrEngine');
 
 /**
@@ -25,24 +25,60 @@ async function versionQr(row) {
  *
  * NOTE: no authentication yet (Module 11). requestingProviderId / providerId are taken from the body.
  */
-function createPrescriptionRouter({ repository, amendmentService, prescriptionDocuments }) {
+async function createdResponse(row) {
+  const { qrPayload, qrImage } = await versionQr(row);
+  return {
+    prescriptionId: row.prescription_id,
+    versionNumber: row.version_number,
+    integrityRoot: row.integrity_root,
+    ledgerAnchorRef: row.ledger_anchor_ref,
+    medicines: row.medicines.map(presentMedicine), // medicineId values are needed to amend this version
+    qrPayload,
+    qrImage,
+  };
+}
+
+function createPrescriptionRouter({ repository, amendmentService, prescriptionDocuments, riskPreview }) {
   const router = express.Router();
 
+  // Creates WITHOUT locked risk. Kept for the current Doctor Portal until it moves to preview → confirm (Module 15).
   router.post('/', async (req, res, next) => {
     try {
       const row = await repository.createPrescription(toCreateInput(req.body));
-      const { qrPayload, qrImage } = await versionQr(row);
-      res.status(201).json({
-        prescriptionId: row.prescription_id,
-        versionNumber: row.version_number,
-        integrityRoot: row.integrity_root,
-        ledgerAnchorRef: row.ledger_anchor_ref,
-        medicines: row.medicines.map(presentMedicine), // medicineId values are needed to amend this version
-        qrPayload,
-        qrImage,
-      });
+      res.status(201).json(await createdResponse(row));
     } catch (err) {
       handleCreateError(err, res, next);
+    }
+  });
+
+  /**
+   * Module 15 step 1 of 2: score every medicine, cache the result, save NOTHING.
+   * Body: the create body. → { previewToken, medicines: [{ drugName, riskScore, riskBand, reasons }] }
+   */
+  router.post('/preview-risk', async (req, res, next) => {
+    try {
+      res.json(await riskPreview.previewRisk(toCreateInput(req.body)));
+    } catch (err) {
+      handleRiskPreviewError(err, res, next);
+    }
+  });
+
+  /**
+   * Module 15 step 2 of 2: create the previewed prescription with its cached risk locked per medicine.
+   * Body: { previewToken } ONLY — the prescription data and risk come from the server-side cache, never the client.
+   * 410 RISK_PREVIEW_EXPIRED when the token is expired, already used, or unknown.
+   */
+  router.post('/confirm', async (req, res, next) => {
+    try {
+      const body = req.body ?? {};
+      const extra = Object.keys(body).filter((key) => key !== 'previewToken');
+      if (extra.length > 0) {
+        throw new ApiError(400, 'FIELD_NOT_ALLOWED', `confirm accepts only previewToken; the previewed prescription is used as-is (got: ${extra.join(', ')})`);
+      }
+      const row = await riskPreview.confirmPrescription(body.previewToken);
+      res.status(201).json(await createdResponse(row));
+    } catch (err) {
+      handleRiskPreviewError(err, res, next);
     }
   });
 

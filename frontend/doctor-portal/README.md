@@ -76,7 +76,7 @@ Not scan results — rendered separately and must stay visually distinct from ev
 |---|---|---|
 | Request failed (network, timeout, 5xx, unreadable response) | Dark slate panel "Unable to reach verification service" + Retry | Says **"This prescription was NOT checked"** — never styled like a result |
 | Unknown pharmacy (400 `UNKNOWN_PHARMACY`) | Same dark panel, pharmacy variant + Switch pharmacy | Setup problem, not a scan outcome |
-| Trust decision | Dashed grey "Trust engine: Pending integration" box **above** every card | Identical for every result. No Dispense / Review / Block wording or colour may be derived from `scanResult` in the frontend — that decision belongs to Module 9 |
+| AI risk (Module 15) | One quiet line inside each card that resolved a version: `AI Risk: N%` (or "not recorded"), small muted text | The highest risk score LOCKED when the prescriber confirmed — never recalculated at scan time. No band, colour, icon or reasons; never gates dispensing. No Dispense / Review / Block wording may be derived from `scanResult` in the frontend (Module 9) |
 
 Cards state findings and next steps only; none of them says "dispense" or "do not dispense".
 The session "Scan history" list (plain React state, lost on reload) uses the same colour families as small dots and
@@ -162,3 +162,14 @@ Screen rules:
 - A pharmacy scan's trust decision is nested inside its scan card (linked by `verification_event_id`), not shown as its own entry.
 - Times show milliseconds (audit events can be milliseconds apart); hover for the exact UTC value.
 - Scan-result chips reuse the pharmacy severity colours above.
+
+## Known gaps (Module 16)
+
+- **Amendments are not risk-scored.** The preview → confirm → lock flow (Module 15) covers *creating* a prescription
+  only. The Amend screen submits directly, so an amended version gets no AI risk preview and its medicines have no
+  locked risk (`locked_risk_*` is NULL; the Pharmacy Portal shows "AI Risk: not recorded" for it). Consequently
+  `liveDataBridge.buildFeatureInputs`' `existingPrescriptionVersionId` has no caller yet. Decided in Module 16 Step 2:
+  documented, not built.
+- **Live rarity scores are held.** `buildFeatureInputs` computes `drug_rarity_score` and `provider_rarity_score` from
+  real prescription data, but they are not sent to the AI service yet — see `ai-service/NOTES.md`
+  ("Live data bridge: what is and isn't live yet").

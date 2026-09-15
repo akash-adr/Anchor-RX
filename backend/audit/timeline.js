@@ -11,6 +11,10 @@
  *   medicine_dispensed                                    Module 14 dispensing_record, joined to its prescription_medicine row
  *                                                         (medicine name as stored) and prescription_version
  *
+ * Module 15: version_created / version_amended detail carries each medicine's lockedRisk — the AI risk the prescriber
+ * confirmed, read from the stored locked_risk_* columns. It is a permanent historical fact: this module never calls the
+ * AI service or any scorer, so a retrained model can never change what the timeline shows.
+ *
  * Every timestamp goes through normalizeTimestamp (epoch ms) before sorting; the timeline is sorted ascending by it.
  * Events sharing a millisecond (a version and its ledger anchor are written in one transaction) are ordered
  * deterministically: version event → ledger anchor → pharmacy scan → medicine dispensed, then version number, then
@@ -91,6 +95,12 @@ class AuditTimelineError extends Error {
   }
 }
 
+/** The stored, write-once risk lock of one medicine row (null when this version's medicines were never locked). */
+function lockedRiskOf(medicine) {
+  if (medicine.locked_risk_score === null || medicine.locked_risk_score === undefined) return null;
+  return { riskScore: Number(medicine.locked_risk_score), riskBand: medicine.locked_risk_band, reasons: medicine.locked_risk_reasons };
+}
+
 function versionSnapshot(row) {
   return {
     status: row.status,
@@ -108,6 +118,7 @@ function versionSnapshot(row) {
       frequency: medicine.frequency,
       durationDays: medicine.duration_days,
       quantityPrescribed: medicine.quantity_prescribed,
+      lockedRisk: lockedRiskOf(medicine), // Module 15: as confirmed at prescribing time — never recomputed
     })),
     integrityRoot: row.integrity_root,
     ledgerAnchorRef: row.ledger_anchor_ref,

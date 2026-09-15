@@ -42,6 +42,11 @@ export interface ScanResult {
   providerStatus: string | null;
   currentActiveVersion: number | null;
   scannedAt: string;
+  /**
+   * Module 15, display only: the highest LOCKED risk score among the scanned version's medicines (null percentage when
+   * none is locked). null when the scan resolved no version. Never used to gate dispensing.
+   */
+  pharmacistRiskDisplay?: { percentage: number | null } | null;
 }
 
 export interface Patient {
@@ -69,6 +74,28 @@ export interface NewPrescription {
   medicines: NewMedicine[];
 }
 
+export type RiskBand = 'low' | 'review' | 'high';
+
+/** One ranked reason from the AI risk engine (Module 8). */
+export interface RiskReason {
+  source: 'rule_engine' | 'ml_model';
+  feature: string;
+  explanation: string;
+}
+
+/** Module 15: risk locked at confirmation — stored once, never recalculated. */
+export interface LockedRisk {
+  riskScore: number;
+  riskBand: RiskBand;
+  reasons: RiskReason[];
+}
+
+/** POST /api/prescriptions/preview-risk — scores every medicine, saves nothing. medicines are in submission order. */
+export interface RiskPreview {
+  previewToken: string;
+  medicines: Array<{ drugName: string; riskScore: number; riskBand: RiskBand; reasons: RiskReason[] }>;
+}
+
 /** A stored medicine of one prescription version. medicineId belongs to that version only (copied forward as new rows). */
 export interface Medicine {
   medicineId: number;
@@ -80,6 +107,7 @@ export interface Medicine {
   frequency: string;
   durationDays: number;
   quantityPrescribed: number;
+  lockedRisk?: LockedRisk | null; // Module 15: null when the prescription was not created through preview → confirm
 }
 
 /** Exactly what the QR code encodes: a pointer for server-side lookup, never clinical data. */

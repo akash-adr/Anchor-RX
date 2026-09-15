@@ -18,6 +18,8 @@ Writes evaluation/report.md (human) and evaluation/report.json (machine).
 
 from __future__ import annotations
 
+import sys
+
 import argparse
 import json
 import statistics
@@ -27,6 +29,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+if __package__ in (None, ""):  # run as a file (python3 <dir>/<script>.py): make ai-service/ importable, like `python -m`
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from data.generate_normal_corpus import DEFAULT_CORPUS_PATH, corpus_sha256, generate_normal_corpus, read_corpus_jsonl
 from evaluation.disjointness import feature_fingerprint

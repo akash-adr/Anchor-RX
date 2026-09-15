@@ -21,6 +21,7 @@ import type {
   Provider,
   ProviderPrescriptionSummary,
   RevokeResult,
+  RiskPreview,
   ScanResult,
 } from './types';
 
@@ -103,6 +104,19 @@ const rxPath = (prescriptionId: string) => `/api/prescriptions/${encodeURICompon
 
 export function createPrescription(data: NewPrescription): Promise<CreatedPrescription> {
   return request('POST', '/api/prescriptions', data);
+}
+
+/** Module 15 step 1: score every medicine. Saves NOTHING; returns a single-use token valid for 10 minutes. */
+export function previewPrescriptionRisk(data: NewPrescription): Promise<RiskPreview> {
+  return request('POST', '/api/prescriptions/preview-risk', data);
+}
+
+/**
+ * Module 15 step 2: create the previewed prescription with its risk locked. Sends ONLY the token — the server uses its
+ * cached copy of the prescription and risk. 410 RISK_PREVIEW_EXPIRED if the token is expired, used, or unknown.
+ */
+export function confirmPrescription(previewToken: string): Promise<CreatedPrescription> {
+  return request('POST', '/api/prescriptions/confirm', { previewToken });
 }
 
 export function amendPrescription(

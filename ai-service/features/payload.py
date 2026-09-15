@@ -34,8 +34,13 @@ class ScoringPayload(BaseModel):
     patientAge: int = Field(ge=0, le=130)
     patientWeight: float | None = Field(None, gt=0, le=400)
     patientWeightIsDefault: bool = False
+    # Module 15: recorded on the prescription (cm). Carried for traceability — NOT a model feature.
+    patientHeight: float | None = Field(None, gt=0, le=300)
 
+    # drugCombinationFlag is computed in Node from TWO sources: other active prescriptions (overlappingPrescriptionIds)
+    # and other medicines on the same submission (siblingSameClassCount, Module 15).
     drugCombinationFlag: bool = False
     overlappingPrescriptionIds: list[str] = Field(default_factory=list)
+    siblingSameClassCount: int = Field(0, ge=0)
     providerDrugClassHistory: dict[str, int] = Field(default_factory=dict)
     patientVelocity: int = Field(0, ge=0)

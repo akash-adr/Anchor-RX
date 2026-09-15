@@ -62,6 +62,11 @@ function presentMedicine(row) {
     frequency: row.frequency,
     durationDays: row.duration_days,
     quantityPrescribed: row.quantity_prescribed,
+    // Module 15: the AI risk shown to the prescriber at confirmation — stored once, never recalculated. null if not locked.
+    lockedRisk:
+      row.locked_risk_score === null || row.locked_risk_score === undefined
+        ? null
+        : { riskScore: Number(row.locked_risk_score), riskBand: row.locked_risk_band, reasons: row.locked_risk_reasons },
   };
 }
 

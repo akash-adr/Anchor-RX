@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "total_prescriptions": 4000,
+  "drug_counts": {
+    "amlodipine": 367,
+    "amoxicillin": 492,
+    "atorvastatin": 365,
+    "azithromycin": 389,
+    "cefalexin": 386,
+    "ibuprofen": 472,
+    "metformin": 332,
+    "montelukast": 226,
+    "paracetamol": 697,
+    "rosuvastatin": 274
+  },
+  "drug_class_counts": {
+    "analgesic": 697,
+    "biguanide": 332,
+    "calcium channel blocker": 367,
+    "cephalosporin": 386,
+    "leukotriene receptor antagonist": 226,
+    "macrolide antibiotic": 389,
+    "nsaid": 472,
+    "penicillin antibiotic": 492,
+    "statin": 639
+  },
+  "drug_rarity_score": {
+    "amlodipine": 0.473458,
+    "amoxicillin": 0.294118,
+    "atorvastatin": 0.476327,
+    "azithromycin": 0.441894,
+    "cefalexin": 0.446198,
+    "ibuprofen": 0.322812,
+    "metformin": 0.523673,
+    "montelukast": 0.675753,
+    "paracetamol": 0.0,
+    "rosuvastatin": 0.606887
+  },
+  "drug_class_distribution": {
+    "analgesic": 0.17425,
+    "biguanide": 0.083,
+    "calcium channel blocker": 0.09175,
+    "cephalosporin": 0.0965,
+    "leukotriene receptor antagonist": 0.0565,
+    "macrolide antibiotic": 0.09725,
+    "nsaid": 0.118,
+    "penicillin antibiotic": 0.123,
+    "statin": 0.15975
+  }
+}

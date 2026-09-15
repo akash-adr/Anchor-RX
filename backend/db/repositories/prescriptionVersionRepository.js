@@ -33,6 +33,12 @@
  *
  * Inputs are camelCase ({ patientId, providerId, heightCm, weightKg, medicines: [...] }); returned rows are the
  * snake_case database columns with a `medicines` array (ordered by sequence_number) attached.
+ *
+ * Locked risk (Module 15): createPrescription(data, { lockedRisks }) writes each medicine's confirmed AI risk into
+ * locked_risk_* with the SAME INSERT that creates the medicine row, inside the same transaction as hashing and ledger
+ * anchoring — never a follow-up UPDATE. lockedRisks is a separate argument, never part of the client-shaped `data`,
+ * so a request body can't supply risk numbers. locked_risk_* are not hashed. Amendments/revocations copy medicines
+ * forward WITHOUT locked risk (NULL) — an open Module 15 decision.
  */
 
 const crypto = require('crypto');
@@ -56,7 +62,10 @@ const MEDICINE_COLUMNS = Object.freeze([
   'quantity_prescribed',
 ]);
 
-const SELECT_MEDICINE_COLUMNS = `medicine_id, prescription_version_id, sequence_number, ${MEDICINE_COLUMNS.join(', ')}`;
+const LOCKED_RISK_COLUMNS = Object.freeze(['locked_risk_score', 'locked_risk_band', 'locked_risk_reasons']);
+const RISK_BANDS = Object.freeze(['low', 'review', 'high']);
+
+const SELECT_MEDICINE_COLUMNS = `medicine_id, prescription_version_id, sequence_number, ${MEDICINE_COLUMNS.join(', ')}, ${LOCKED_RISK_COLUMNS.join(', ')}`;
 
 // The single write path for a version row. salt/field_hashes/integrity_root are computed per version and
 // ledger_anchor_ref is that version's own ledger entry — none of them is ever copied forward.
@@ -69,11 +78,11 @@ const INSERT_VERSION_SQL = `
      status, amended_by_provider_id, reason)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
-// The single write path for a medicine row (always for a brand-new version).
+// The single write path for a medicine row (always for a brand-new version) — locked risk included in the same INSERT.
 const INSERT_MEDICINE_SQL = `
   INSERT INTO prescription_medicine
-    (prescription_version_id, sequence_number, ${MEDICINE_COLUMNS.join(', ')})
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+    (prescription_version_id, sequence_number, ${MEDICINE_COLUMNS.join(', ')}, ${LOCKED_RISK_COLUMNS.join(', ')})
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
 // The only UPDATE in this layer. Lifecycle metadata on the superseded row — nothing else.
 const SUPERSEDE_SQL = `
@@ -257,6 +266,33 @@ function normalizeNewPrescription(data) {
   });
 
   return { top, medicines };
+}
+
+/**
+ * lockedRisks (Module 15) → one { score, band, reasons } per medicine, or all null when omitted.
+ * All-or-nothing: either every medicine has a locked risk or none does (mirrors migration 012's CHECKs).
+ */
+function normalizeLockedRisks(lockedRisks, medicineCount) {
+  if (lockedRisks === undefined || lockedRisks === null) return Array(medicineCount).fill(null);
+  if (!Array.isArray(lockedRisks) || lockedRisks.length !== medicineCount) {
+    throw new RepositoryError('INVALID_LOCKED_RISK', `lockedRisks must have exactly one entry per medicine (${medicineCount})`);
+  }
+  return lockedRisks.map((risk, index) => {
+    const label = `lockedRisks[${index}]`;
+    if (!isPlainObject(risk)) throw new RepositoryError('INVALID_LOCKED_RISK', `${label} must be an object`);
+    const { riskScore, riskBand, reasons } = risk;
+    if (typeof riskScore !== 'number' || !Number.isFinite(riskScore) || riskScore < 0 || riskScore > 100 || Math.round(riskScore * 100) !== riskScore * 100) {
+      throw new RepositoryError('INVALID_LOCKED_RISK', `${label}.riskScore must be a number 0–100 with at most 2 decimals`);
+    }
+    if (!RISK_BANDS.includes(riskBand)) {
+      throw new RepositoryError('INVALID_LOCKED_RISK', `${label}.riskBand must be one of ${RISK_BANDS.join(', ')}`);
+    }
+    const reasonsValid = Array.isArray(reasons) && reasons.every((r) => isPlainObject(r) && ['source', 'feature', 'explanation'].every((k) => typeof r[k] === 'string'));
+    if (!reasonsValid) {
+      throw new RepositoryError('INVALID_LOCKED_RISK', `${label}.reasons must be an array of { source, feature, explanation }`);
+    }
+    return { score: riskScore, band: riskBand, reasons: reasons.map(({ source, feature, explanation }) => ({ source, feature, explanation })) };
+  });
 }
 
 /** { medicineId, ...amendable fields } → { medicineId, updates } (column names). */
@@ -469,7 +505,15 @@ function createPrescriptionVersionRepository(
 
     // 4. Every medicine, in sequence order, as new rows of this version.
     for (const medicine of medicines) {
-      await conn.execute(INSERT_MEDICINE_SQL, [inserted.insertId, medicine.sequence_number, ...MEDICINE_COLUMNS.map((column) => medicine[column])]);
+      const risk = medicine.locked_risk ?? null; // not hashed; NULL for copied-forward (amended/revoked) medicines
+      await conn.execute(INSERT_MEDICINE_SQL, [
+        inserted.insertId,
+        medicine.sequence_number,
+        ...MEDICINE_COLUMNS.map((column) => medicine[column]),
+        risk ? risk.score : null,
+        risk ? risk.band : null,
+        risk ? JSON.stringify(risk.reasons) : null,
+      ]);
     }
     return inserted.insertId;
   }
@@ -478,10 +522,15 @@ function createPrescriptionVersionRepository(
    * @param {object} data { patientId, providerId, heightCm?, weightKg?, medicines: [{ drugName, drugClass, dosageValue,
    *                      dosageUnit, frequency, durationDays, quantityPrescribed }, ...] } — at least one medicine;
    *                      optional prescriptionId (e.g. 'RX-DEMO-0001'), otherwise one is generated.
+   * @param {object} [options]
+   * @param {Array<{riskScore, riskBand, reasons}>} [options.lockedRisks] Module 15: one confirmed risk per medicine, in
+   *        submission order — written by the same INSERT as each medicine row, in this one transaction.
    * @returns {Promise<object>} the version row with its `medicines`
    */
-  async function createPrescription(data) {
-    const { top, medicines } = normalizeNewPrescription(data);
+  async function createPrescription(data, { lockedRisks } = {}) {
+    const { top, medicines: normalized } = normalizeNewPrescription(data);
+    const risks = normalizeLockedRisks(lockedRisks, normalized.length);
+    const medicines = normalized.map((medicine, index) => ({ ...medicine, locked_risk: risks[index] }));
 
     let prescriptionId = generatePrescriptionId();
     if (data.prescriptionId !== undefined) {
@@ -638,8 +687,14 @@ function createPrescriptionVersionRepository(
   });
 }
 
+/** The exact validation/normalization createPrescription applies — no database access. Throws RepositoryError. */
+function validateNewPrescription(data) {
+  return normalizeNewPrescription(data);
+}
+
 module.exports = {
   createPrescriptionVersionRepository,
+  validateNewPrescription,
   RepositoryError,
   MEDICINE_COLUMNS,
   AMENDABLE_MEDICINE_FIELDS,

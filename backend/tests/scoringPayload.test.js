@@ -18,8 +18,8 @@ if (!TEST_DB_NAME.endsWith('_test')) {
 const CONTRACT_KEYS = [
   'payloadVersion', 'prescriptionId', 'versionNumber', 'patientId', 'providerId', 'referenceTime',
   'drugName', 'drugClass', 'doseValue', 'doseUnit', 'frequency', 'durationDays', 'route',
-  'patientAge', 'patientWeight', 'patientWeightIsDefault',
-  'drugCombinationFlag', 'overlappingPrescriptionIds', 'providerDrugClassHistory', 'patientVelocity',
+  'patientAge', 'patientWeight', 'patientWeightIsDefault', 'patientHeight',
+  'drugCombinationFlag', 'overlappingPrescriptionIds', 'siblingSameClassCount', 'providerDrugClassHistory', 'patientVelocity',
 ];
 
 let pool;
@@ -96,7 +96,7 @@ test('patient age uses whole years and respects the birthday boundary', async ()
   expect((await onBirthday.buildScoringPayload('RX-DEMO-0003', 1)).patientAge).toBe(64);
 });
 
-test('multi-medicine prescription: drug fields come from the FIRST medicine (sequence 1) — documented simplification', async () => {
+test('stored multi-medicine prescription: scores the requested medicine (default 1) with the others as siblings', async () => {
   const { createPrescriptionVersionRepository } = require('../db/repositories/prescriptionVersionRepository');
   const v1 = await createPrescriptionVersionRepository(pool).createPrescription({
     patientId: 'PAT-001',
@@ -107,9 +107,15 @@ test('multi-medicine prescription: drug fields come from the FIRST medicine (seq
     ],
   });
   const payload = await buildScoringPayload(v1.prescription_id, 1);
-  expect(Object.keys(payload)).toEqual(CONTRACT_KEYS); // contract unchanged
+  expect(Object.keys(payload)).toEqual(CONTRACT_KEYS);
   expect(payload).toMatchObject({ drugName: 'Ibuprofen', drugClass: 'nsaid', doseValue: '400.000', doseUnit: 'mg', frequency: 'every 8 hours', durationDays: 5 });
   expect(payload.providerDrugClassHistory).toEqual({ statin: 1 }); // PRV-002's other prescription (RX-DEMO-0002), by first medicine
+
+  const second = await buildScoringPayload(v1.prescription_id, 1, 2);
+  expect(second).toMatchObject({ drugName: 'Amoxicillin', drugClass: 'penicillin antibiotic', doseValue: '500.000', siblingSameClassCount: 0 });
+  // PAT-001's other active prescription RX-DEMO-0001 is also a penicillin antibiotic → cross-prescription overlap.
+  expect(second).toMatchObject({ drugCombinationFlag: true, overlappingPrescriptionIds: ['RX-DEMO-0001'] });
+  await expect(buildScoringPayload(v1.prescription_id, 1, 3)).rejects.toMatchObject({ code: 'MEDICINE_NOT_FOUND' });
 });
 
 test('unknown prescription versions raise VERSION_NOT_FOUND', async () => {

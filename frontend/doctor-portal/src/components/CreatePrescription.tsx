@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { ApiError, createPrescription, getPatients } from '../api';
+import { ApiError, confirmPrescription, getPatients, previewPrescriptionRisk } from '../api';
 import { useCurrentProvider } from '../context/ProviderContext';
-import type { CreatedPrescription, Patient } from '../types';
+import type { CreatedPrescription, NewPrescription, Patient, RiskPreview } from '../types';
 import ConfirmationCard from './ConfirmationCard';
 import ErrorNotice, { toApiError } from './ErrorNotice';
 import { DosageUnitInput, Field, TextInput, inputClass } from './formControls';
 import PatientCombobox from './PatientCombobox';
+import RiskConfirmation from './RiskConfirmation';
 
 // Mirror the backend's DECIMAL rules for early feedback; the API remains the authority.
 const DOSAGE_PATTERN = /^\d{1,9}(\.\d{1,3})?$/; // DECIMAL(12,3)
@@ -99,6 +100,12 @@ export default function CreatePrescription({ onAmend }: { onAmend?: (prescriptio
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<ApiError | null>(null);
   const [result, setResult] = useState<CreatedPrescription | null>(null);
+  // Module 15: the risk preview being reviewed (nothing saved yet) and the exact submission it scored. The form state
+  // above is never touched by the review, so "Go back and edit" returns to everything the doctor entered.
+  const [review, setReview] = useState<{ preview: RiskPreview; submission: NewPrescription } | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<ApiError | null>(null);
+  const previewRequest = useRef(0); // a preview response that arrives after the doctor has moved on is ignored
 
   const loadPatients = useCallback(async () => {
     setPatients({ status: 'loading' });
@@ -140,39 +147,76 @@ export default function CreatePrescription({ onAmend }: { onAmend?: (prescriptio
     });
   };
 
+  /** Exactly what gets scored — and, through the server's cached copy, saved. On-screen order = sequence_number. */
+  const buildSubmission = (): NewPrescription => {
+    const height = form.heightCm.trim();
+    const weight = form.weightKg.trim();
+    return {
+      patientId: form.patientId,
+      providerId: provider.providerId, // from the (mock) signed-in provider, never typed by the user
+      ...(height ? { heightCm: height } : {}),
+      ...(weight ? { weightKg: weight } : {}),
+      medicines: form.medicines.map((m) => ({
+        drugName: m.drugName.trim(),
+        drugClass: m.drugClass.trim(),
+        dosageValue: m.dosageValue.trim(),
+        dosageUnit: m.dosageUnit.trim(),
+        frequency: m.frequency.trim(),
+        durationDays: Number(m.durationDays),
+        quantityPrescribed: Number(m.quantityPrescribed),
+      })),
+    };
+  };
+
+  /** Always a FRESH preview-risk call from the current form: nothing from a discarded or expired preview carries over. */
+  const runPreview = async (onError: (error: ApiError) => void) => {
+    const requestId = ++previewRequest.current;
+    const submission = buildSubmission();
+    setSubmitting(true);
+    try {
+      const preview = await previewPrescriptionRisk(submission); // scores every medicine; saves nothing
+      if (requestId !== previewRequest.current) return;
+      setConfirmError(null);
+      setReview({ preview, submission });
+    } catch (err) {
+      if (requestId === previewRequest.current) onError(toApiError(err));
+    } finally {
+      if (requestId === previewRequest.current) setSubmitting(false);
+    }
+  };
+
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
     const errors = validate(form);
     setFieldErrors(errors);
     if (hasErrors(errors)) return;
-
-    setSubmitting(true);
     setSubmitError(null);
+    await runPreview(setSubmitError);
+  };
+
+  const onConfirm = async () => {
+    if (!review) return;
+    setConfirming(true);
+    setConfirmError(null);
     try {
-      const height = form.heightCm.trim();
-      const weight = form.weightKg.trim();
-      const created = await createPrescription({
-        patientId: form.patientId,
-        providerId: provider.providerId, // from the (mock) signed-in provider, never typed by the user
-        ...(height ? { heightCm: height } : {}),
-        ...(weight ? { weightKg: weight } : {}),
-        // In the order the blocks appear on screen: this order becomes each medicine's sequence_number.
-        medicines: form.medicines.map((m) => ({
-          drugName: m.drugName.trim(),
-          drugClass: m.drugClass.trim(),
-          dosageValue: m.dosageValue.trim(),
-          dosageUnit: m.dosageUnit.trim(),
-          frequency: m.frequency.trim(),
-          durationDays: Number(m.durationDays),
-          quantityPrescribed: Number(m.quantityPrescribed),
-        })),
-      });
+      // The token ONLY — the server creates the prescription from its cached copy, with exactly the risk shown here.
+      const created = await confirmPrescription(review.preview.previewToken);
       setResult(created);
+      setReview(null);
+      setForm(emptyForm(nextKey.current++));
+      setFieldErrors(NO_ERRORS);
     } catch (err) {
-      setSubmitError(toApiError(err));
+      setConfirmError(toApiError(err));
     } finally {
-      setSubmitting(false);
+      setConfirming(false);
     }
+  };
+
+  const backToEdit = () => {
+    previewRequest.current += 1;
+    setReview(null); // the preview and its token are discarded; the server's copy simply expires
+    setConfirmError(null);
+    setSubmitError(null);
   };
 
   if (result) {
@@ -189,6 +233,23 @@ export default function CreatePrescription({ onAmend }: { onAmend?: (prescriptio
     );
   }
 
+  if (review) {
+    const patientName = patients.status === 'ready' ? patients.patients.find((p) => p.patientId === review.submission.patientId)?.name : undefined;
+    return (
+      <RiskConfirmation
+        preview={review.preview}
+        submittedMedicines={review.submission.medicines}
+        patientLabel={patientName ? `${patientName} (${review.submission.patientId})` : review.submission.patientId}
+        confirming={confirming}
+        rechecking={submitting}
+        error={confirmError}
+        onConfirm={() => void onConfirm()}
+        onBack={backToEdit}
+        onRecheck={() => void runPreview(setConfirmError)}
+      />
+    );
+  }
+
   const medicineCount = form.medicines.length;
 
   return (
@@ -198,7 +259,7 @@ export default function CreatePrescription({ onAmend }: { onAmend?: (prescriptio
       </h1>
       <p className="mt-1 text-sm text-slate-600">
         Issued by <span className="font-medium text-slate-800">{provider.name}</span>. On authorization every field is hashed and
-        the integrity root is anchored to the ledger.
+        the integrity root is anchored to the ledger. You'll review the AI risk for every medicine before anything is saved.
       </p>
 
       <form onSubmit={onSubmit} noValidate className="mt-6 space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -378,7 +439,7 @@ export default function CreatePrescription({ onAmend }: { onAmend?: (prescriptio
             className="inline-flex items-center gap-2 rounded-md bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {submitting && <span aria-hidden className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />}
-            {submitting ? 'Authorizing & anchoring…' : 'Authorize & anchor'}
+            {submitting ? 'Checking AI risk…' : 'Authorize & anchor'}
           </button>
         </div>
       </form>

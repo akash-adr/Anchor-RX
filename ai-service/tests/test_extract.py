@@ -5,7 +5,7 @@ import math
 import numpy as np
 import pytest
 
-from data.dosage_reference import DOSAGE_REFERENCE, get_reference
+from data.dosage_reference import DOSAGE_REFERENCE, DRUG_REFERENCE, get_reference
 from features.encoding import CATEGORICAL_FEATURES, NUMERIC_FEATURES, build_preprocessor, features_to_frame
 from features.extract import (
     DEFAULT_PATIENT_WEIGHT_KG,
@@ -157,12 +157,22 @@ def test_features_to_frame_rejects_drifted_feature_keys(payload, corpus_stats):
     assert set(CATEGORICAL_FEATURES) | set(NUMERIC_FEATURES) == set(FEATURE_NAMES)
 
 
-def test_dosage_reference_is_complete_and_matches_seed_drugs():
-    assert 8 <= len(DOSAGE_REFERENCE) <= 10
-    for name in ("Amoxicillin", "Atorvastatin", "Rosuvastatin", "Metformin", "Paracetamol", "Amlodipine", "Azithromycin", "Ibuprofen", "Cefalexin"):
+def test_dosage_reference_is_exactly_the_corrected_table_and_derives_only_from_it():
+    assert len(DRUG_REFERENCE) == 17
+    assert set(DOSAGE_REFERENCE) == {name.lower() for name in DRUG_REFERENCE}
+    for name, row in DRUG_REFERENCE.items():
         ref = get_reference(name)
-        assert ref is not None and ref.typical_dose_min <= ref.typical_dose_max <= ref.max_single_dose
-        assert ref.max_doses_per_day >= max(ref.typical_doses_per_day)
-        assert ref.typical_duration_min_days <= ref.typical_duration_max_days
-        assert all(ref.typical_dose_min <= s <= ref.typical_dose_max for s in ref.common_strengths)
-        assert "oral" in ref.routes
+        assert (ref.drug_class, ref.unit, ref.typical_dose_min, ref.typical_dose_max, ref.max_single_dose) == (
+            row["drug_class"], row["dosage_unit"], row["dose_min"], row["dose_max"], row["dose_max"])
+        assert ref.typical_dose_per_kg_max == row["dose_per_kg_max"]
+        assert ref.typical_doses_per_day == tuple(float(n) for n in range(row["freq_min"], row["freq_max"] + 1))
+        assert ref.max_doses_per_day == row["freq_max"]
+        assert (ref.typical_duration_min_days, ref.typical_duration_max_days) == (row["dur_min"], row["dur_max"])
+        assert ref.common_strengths[0] == row["dose_min"] and ref.common_strengths[-1] == row["dose_max"]
+        assert all(row["dose_min"] <= s <= row["dose_max"] for s in ref.common_strengths)
+        assert ref.routes == ("oral",)
+    # The one liquid is in ml; everything else is mg.
+    assert get_reference("Diphenhydramine").unit == "ml"
+    assert {key for key, ref in DOSAGE_REFERENCE.items() if ref.unit != "mg"} == {"diphenhydramine"}
+    # Deliberately excluded: a topical gel has no comparable systemic range.
+    assert get_reference("Zytee") is None

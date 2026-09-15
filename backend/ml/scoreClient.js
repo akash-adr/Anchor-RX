@@ -94,13 +94,21 @@ function createScoreClient(
   const scoreUrl = `${new URL(baseUrl).href.replace(/\/+$/, '')}/score`; // invalid URL → throws at startup, not per scan
 
   /**
+   * Scores a stored prescription version (its first medicine, with the others as sibling context) — Module 9's path.
    * @returns {Promise<{riskScore: number, riskBand: 'low'|'review'|'high', reasons: Array, details: object|null}>}
    * @throws {AIServiceError} code AI_SERVICE_UNAVAILABLE — any AI-service failure
    * @throws {ScoringPayloadError} the prescription version cannot be turned into a payload (not an AI outage)
    */
   async function scorePrescriptionViaAI(prescriptionId, versionNumber) {
     const payload = await payloadBuilder.buildScoringPayload(prescriptionId, versionNumber);
+    return scorePayloadViaAI(payload);
+  }
 
+  /**
+   * ONE POST /score for an already-built ScoringPayload (Module 15's per-medicine path). Same failure contract.
+   * @throws {AIServiceError} code AI_SERVICE_UNAVAILABLE — any AI-service failure
+   */
+  async function scorePayloadViaAI(payload) {
     let response;
     try {
       response = await fetchImpl(scoreUrl, {
@@ -139,7 +147,7 @@ function createScoreClient(
     return translateAIResponse(body);
   }
 
-  return Object.freeze({ scorePrescriptionViaAI });
+  return Object.freeze({ scorePrescriptionViaAI, scorePayloadViaAI });
 }
 
 module.exports = {

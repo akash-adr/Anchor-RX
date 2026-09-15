@@ -1,8 +1,8 @@
 """
 Synthetic NORMAL prescription corpus for training the Isolation Forest (Module 8, Step 2).
 
-⚠ PLACEHOLDER DATA — deliberately basic. Every value is synthetic and derived from data/dosage_reference.py
-(itself illustrative, not clinical). The realism of this corpus is planned to be revisited in detail later.
+⚠ SYNTHETIC DATA — deliberately basic. Every prescription is synthetic; drugs, doses, frequencies and durations are
+sampled inside data/dosage_reference.py's simplified demo ranges (in each drug's own unit — ml for liquids). The realism of this corpus is planned to be revisited in detail later.
 
 Contract (the part that must NOT change when the generation logic becomes more sophisticated):
     generate_normal_corpus(size, seed) -> list[dict]      # ScoringPayload v1 dicts — the exact shape Node sends
@@ -17,6 +17,8 @@ Run:  .venv/bin/python -m data.generate_normal_corpus [--size 4000] [--seed 2026
 
 from __future__ import annotations
 
+import sys
+
 import argparse
 import hashlib
 import json
@@ -28,11 +30,14 @@ from typing import Any, Iterable, Mapping
 
 import numpy as np
 
+if __package__ in (None, ""):  # run as a file (python3 <dir>/<script>.py): make ai-service/ importable, like `python -m`
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 from data.dosage_reference import DOSAGE_REFERENCE, DrugReference
 from features.extract import DEFAULT_PATIENT_WEIGHT_KG
 from features.payload import ScoringPayload
 
-GENERATOR_VERSION = "placeholder-v1"
+GENERATOR_VERSION = "reference-v2"  # v2: corrected 17-drug DRUG_REFERENCE
 DEFAULT_CORPUS_SIZE = 4000
 DEFAULT_SEED = 20260915
 DEFAULT_CORPUS_PATH = Path(__file__).resolve().parent / "generated" / "normal_corpus.jsonl"
@@ -41,14 +46,16 @@ DEFAULT_CORPUS_PATH = Path(__file__).resolve().parent / "generated" / "normal_co
 # Relative prescribing weights per specialty (keys = lowercase reference drug names). PLACEHOLDER guesses.
 SPECIALTY_DRUG_MIX: dict[str, dict[str, float]] = {
     "general_practice": {
-        "amoxicillin": 3.0, "paracetamol": 3.0, "ibuprofen": 2.0, "cefalexin": 1.5, "azithromycin": 1.5,
-        "metformin": 1.5, "atorvastatin": 1.5, "amlodipine": 1.5, "rosuvastatin": 0.7, "montelukast": 0.8,
+        "amoxicillin": 3.0, "azithromycin": 1.5, "ciprofloxacin": 1.0, "roxithromycin": 1.0, "ibuprofen": 2.0,
+        "diclofenac": 1.5, "omeprazole": 1.5, "pantoprazole": 1.0, "metformin": 1.5, "glimepiride": 0.7,
+        "atorvastatin": 1.5, "lisinopril": 1.0, "losartan": 1.0, "warfarin": 0.4, "sertraline": 0.7,
+        "escitalopram": 0.7, "diphenhydramine": 1.5,
     },
-    "cardiology": {"atorvastatin": 4.0, "rosuvastatin": 3.0, "amlodipine": 4.0, "metformin": 0.5, "paracetamol": 0.3},
-    "endocrinology": {"metformin": 5.0, "atorvastatin": 2.0, "rosuvastatin": 1.5, "amlodipine": 1.0},
-    "infectious_disease_ent": {"amoxicillin": 4.0, "cefalexin": 3.0, "azithromycin": 3.0, "paracetamol": 1.5, "ibuprofen": 1.0},
-    "pulmonology": {"montelukast": 4.0, "azithromycin": 3.0, "amoxicillin": 1.5, "paracetamol": 1.0},
-    "orthopaedics_pain": {"ibuprofen": 4.0, "paracetamol": 4.0, "cefalexin": 1.0},
+    "cardiology": {"atorvastatin": 4.0, "lisinopril": 3.0, "losartan": 3.0, "warfarin": 2.5, "pantoprazole": 0.5},
+    "endocrinology": {"metformin": 5.0, "glimepiride": 3.0, "atorvastatin": 2.0, "lisinopril": 1.0, "losartan": 1.0},
+    "infectious_disease_ent": {"amoxicillin": 4.0, "azithromycin": 3.0, "ciprofloxacin": 2.5, "roxithromycin": 2.5, "diphenhydramine": 2.0, "ibuprofen": 1.0},
+    "psychiatry": {"sertraline": 4.0, "escitalopram": 4.0, "omeprazole": 0.5},
+    "orthopaedics_pain": {"ibuprofen": 4.0, "diclofenac": 4.0, "omeprazole": 2.0, "pantoprazole": 1.5},
 }
 # specialty → (provider id code, number of synthetic providers)
 SPECIALTY_PROVIDERS: dict[str, tuple[str, int]] = {
@@ -56,7 +63,7 @@ SPECIALTY_PROVIDERS: dict[str, tuple[str, int]] = {
     "cardiology": ("CARD", 5),
     "endocrinology": ("ENDO", 4),
     "infectious_disease_ent": ("ID", 5),
-    "pulmonology": ("PULM", 4),
+    "psychiatry": ("PSY", 4),
     "orthopaedics_pain": ("ORTH", 6),
 }
 PROVIDER_ACTIVITY_SIGMA = 0.5  # lognormal spread of how busy each provider is
@@ -64,9 +71,11 @@ PROVIDER_ACTIVITY_SIGMA = 0.5  # lognormal spread of how busy each provider is
 # ── Patients ─────────────────────────────────────────────────────────────────────────────────────────────────
 AGE_PROFILE_BY_CLASS: dict[str, tuple[float, float]] = {  # (mean, sd) years
     "statin": (62.0, 10.0),
-    "biguanide": (56.0, 11.0),
-    "calcium channel blocker": (61.0, 11.0),
-    "leukotriene receptor antagonist": (38.0, 14.0),
+    "antidiabetic": (56.0, 11.0),
+    "ace_inhibitor": (60.0, 11.0),
+    "arb": (60.0, 11.0),
+    "anticoagulant": (68.0, 10.0),
+    "ssri": (38.0, 13.0),
 }
 DEFAULT_AGE_PROFILE = (42.0, 17.0)  # acute drugs
 MIN_AGE, MAX_AGE = 18, 90
@@ -75,9 +84,9 @@ MIN_WEIGHT_KG, MAX_WEIGHT_KG = 40.0, 140.0
 
 # ── Prescription details ─────────────────────────────────────────────────────────────────────────────────────
 NON_STANDARD_DOSE_RATE = 0.10  # in-range doses that are not a common strength
-GRAM_UNIT_RATE = 0.05  # doses ≥ 500 mg written in g (exercises unit conversion)
-NON_ORAL_ROUTE_RATE = 0.06  # for drugs whose reference lists a non-oral route
-PRN_CLASSES = frozenset({"analgesic", "nsaid"})
+GRAM_UNIT_RATE = 0.05  # mg doses ≥ 500 mg written in g (exercises unit conversion)
+NON_ORAL_ROUTE_RATE = 0.06  # for drugs whose reference lists a non-oral route (none in the v2 table — all oral)
+PRN_CLASSES = frozenset({"nsaid"})
 PRN_RATE = 0.15
 COMBINATION_RATE_CHRONIC = 0.10  # benign same-class overlap (e.g. switching statins) — keeps the flag from being "rare"
 COMBINATION_RATE_ACUTE = 0.03
@@ -156,7 +165,8 @@ def _sample_weight(rng: np.random.Generator, age: int) -> tuple[float, bool]:
     return round(weight * 2) / 2, False
 
 
-def _sample_dose_mg(rng: np.random.Generator, ref: DrugReference) -> float:
+def _sample_dose(rng: np.random.Generator, ref: DrugReference) -> float:
+    """A per-dose amount in the reference's OWN unit (mg, or ml for liquids)."""
     strengths = ref.common_strengths
     if len(strengths) > 1 and rng.random() < NON_STANDARD_DOSE_RATE:
         step = 2.5 if ref.typical_dose_max <= 20 else 5.0 if ref.typical_dose_max <= 100 else 25.0
@@ -168,10 +178,12 @@ def _sample_dose_mg(rng: np.random.Generator, ref: DrugReference) -> float:
     return float(strengths[int(rng.choice(len(strengths), p=weights / weights.sum()))])
 
 
-def _format_dose(rng: np.random.Generator, dose_mg: float) -> tuple[str, str]:
-    if dose_mg >= 500 and rng.random() < GRAM_UNIT_RATE:
-        return f"{dose_mg / 1000:.3f}", "g"
-    return f"{dose_mg:.3f}", "mg"  # DECIMAL(10,3)-style string, like MySQL/Node
+def _format_dose(rng: np.random.Generator, dose: float, ref: DrugReference) -> tuple[str, str]:
+    if ref.unit != "mg":
+        return f"{dose:.3f}", ref.unit  # liquids stay in ml — never converted or relabelled as mg
+    if dose >= 500 and rng.random() < GRAM_UNIT_RATE:
+        return f"{dose / 1000:.3f}", "g"
+    return f"{dose:.3f}", "mg"  # DECIMAL(10,3)-style string, like MySQL/Node
 
 
 def _sample_frequency_text(rng: np.random.Generator, ref: DrugReference) -> str:
@@ -208,7 +220,7 @@ def _iso(moment: datetime) -> str:
 def _draft_payload(rng: np.random.Generator, index: int, provider: SyntheticProvider, ref: DrugReference) -> dict[str, Any]:
     age = _sample_age(rng, ref)
     weight, weight_is_default = _sample_weight(rng, age)
-    dose_value, dose_unit = _format_dose(rng, _sample_dose_mg(rng, ref))
+    dose_value, dose_unit = _format_dose(rng, _sample_dose(rng, ref), ref)
     frequency = _sample_frequency_text(rng, ref)
     duration = _sample_duration(rng, ref)
     route = _sample_route(rng, ref)

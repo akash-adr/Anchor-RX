@@ -49,7 +49,10 @@ def test_corpus_has_variety_and_occasional_benign_duplication(corpus):
     assert summary["providers"] >= 30
     assert 0.02 <= summary["drug_combination_rate"] <= 0.12
     assert 0.10 <= summary["default_weight_rate"] <= 0.20
-    assert summary["non_oral_route_rate"] > 0 and summary["gram_unit_rate"] > 0 and summary["prn_rate"] > 0
+    assert summary["non_oral_route_rate"] == 0  # the corrected reference lists oral only
+    assert summary["gram_unit_rate"] > 0 and summary["prn_rate"] > 0
+    # The liquid is generated in ml, never relabelled as mg.
+    assert {p["doseUnit"] for p in corpus if p["drugName"] == "Diphenhydramine"} == {"ml"}
     ages = [p["patientAge"] for p in corpus]
     assert min(ages) < 30 and max(ages) > 75
 

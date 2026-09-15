@@ -59,8 +59,9 @@ beforeEach(async () => {
 // ── helpers ──────────────────────────────────────────────────────────────────────────────────────────────
 
 const medicineOf = (version, sequenceNumber) => version.medicines.find((m) => m.sequence_number === sequenceNumber);
+// Clinical content of a medicine row: everything except its per-version ids and Module 15's locked_risk_* (asserted separately).
 const clinical = (medicine) => {
-  const { medicine_id: _id, prescription_version_id: _versionId, ...rest } = medicine;
+  const { medicine_id: _id, prescription_version_id: _versionId, locked_risk_score: _score, locked_risk_band: _band, locked_risk_reasons: _reasons, ...rest } = medicine;
   return rest;
 };
 
@@ -112,6 +113,8 @@ describe('createPrescription', () => {
       { sequence_number: 2, drug_name: 'Cetirizine', drug_class: 'antihistamine', dosage_value: '10.000', dosage_unit: 'mg', frequency: 'once daily', duration_days: 7, quantity_prescribed: 7 },
     ]);
     expect(v1.medicines.every((m) => m.prescription_version_id === v1.id)).toBe(true);
+    // Created without lockedRisks → Module 15's locked_risk_* stay NULL.
+    expect(v1.medicines.map((m) => [m.locked_risk_score, m.locked_risk_band, m.locked_risk_reasons])).toEqual([[null, null, null], [null, null, null]]);
 
     expect(v1.salt).toMatch(/^[0-9a-f]{32}$/);
     expect(Object.keys(v1.field_hashes).sort()).toEqual(expectedHashKeys(2).sort()); // 4 + 7×2 keys

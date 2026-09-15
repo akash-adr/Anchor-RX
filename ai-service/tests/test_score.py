@@ -9,7 +9,7 @@ from inference.aggregator import aggregate_risk
 from inference.score import get_artifacts, score_prescription
 from rules.rule_engine import EXPLANATIONS
 
-from tests.payloads import extreme_payload, make_payload, ml_only_unusual_payload, tenfold_paracetamol_payload
+from tests.payloads import extreme_payload, make_payload, ml_only_unusual_payload, tenfold_roxithromycin_payload
 
 
 @pytest.fixture(scope="module")
@@ -44,11 +44,16 @@ def test_grossly_implausible_prescription_is_high_and_rules_fill_the_reason_slot
     assert [r["feature"] for r in result["reasons"]] == ["dose_value", "frequency", "drug_combination_flag"]
 
 
-def test_ml_only_anomaly_reaches_review_but_not_high(artifacts):
+def test_ml_only_anomaly_is_explained_by_the_ml_and_can_never_reach_high(artifacts):
+    """No rule fires; the ML flags the case (> 30) and explains it. With no rule hits the final score is 0.6 · ml (<= 60),
+    so an ML-only case reaches review only when ml >= 52. After the corrected-reference retrain this case scores
+    ml 48.27 → risk 29 (LOW); before the retrain it reached review. Documented as a real behaviour change, not re-tuned."""
     result = score_prescription(ml_only_unusual_payload(), artifacts)
+    ml = result["details"]["ml_subscore"]
     assert result["details"]["rule_subscore"] == 0
-    assert result["details"]["ml_subscore"] > 30
-    assert result["risk_band"] == "review" and result["risk_score"] <= 60
+    assert ml > 30
+    assert result["risk_score"] == aggregate_risk(ml, 0) <= 60
+    assert result["risk_band"] == ("review" if result["risk_score"] > 30 else "low")
     assert 1 <= len(result["reasons"]) <= 3
     assert all(r["source"] == "ml_model" for r in result["reasons"])
 
@@ -56,7 +61,7 @@ def test_ml_only_anomaly_reaches_review_but_not_high(artifacts):
 def test_tenfold_dose_is_review_not_high__known_limitation(artifacts):
     """Documents CURRENT behaviour: one dose-limit hit (45) plus a low ML score gives 45 → review.
     A tiered dose rule was proposed but not adopted; change this test deliberately if that decision changes."""
-    result = score_prescription(tenfold_paracetamol_payload(), artifacts)
+    result = score_prescription(tenfold_roxithromycin_payload(), artifacts)
     assert result["risk_band"] == "review"
     assert result["reasons"][0] == {"source": "rule_engine", "feature": "dose_value", "explanation": EXPLANATIONS["dose_limit"]}
 

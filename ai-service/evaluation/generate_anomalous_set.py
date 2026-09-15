@@ -73,7 +73,7 @@ def _plausible_base(rng: np.random.Generator, case_id: str, index: int) -> tuple
         "drugName": ref.drug_name,
         "drugClass": ref.drug_class,
         "doseValue": f"{float(_choice(rng, ref.common_strengths)):.3f}",
-        "doseUnit": "mg",
+        "doseUnit": ref.unit,  # the reference's own unit (ml for liquids)
         "frequency": PLAIN_FREQUENCY[float(_choice(rng, ref.typical_doses_per_day))],
         "durationDays": int(rng.integers(ref.typical_duration_min_days, ref.typical_duration_max_days + 1)),
         "route": "oral",
@@ -91,7 +91,7 @@ def _plausible_base(rng: np.random.Generator, case_id: str, index: int) -> tuple
 def _inject(anomaly: str, payload: dict[str, Any], ref: DrugReference, rng: np.random.Generator) -> None:
     if anomaly == "dose_3x_to_5x":
         payload["doseValue"] = f"{round(ref.typical_dose_max * float(rng.uniform(*DOSE_FACTOR_RANGE)), 1):.3f}"
-        payload["doseUnit"] = "mg"
+        payload["doseUnit"] = ref.unit
     elif anomaly == "extreme_frequency":
         eligible = [phrase for per_day, phrase in EXTREME_FREQUENCIES if per_day >= FREQUENCY_MIN_FACTOR * ref.max_doses_per_day]
         payload["frequency"] = _choice(rng, eligible)

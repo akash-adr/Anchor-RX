@@ -24,7 +24,8 @@
  *   - A network/service failure is NOT a scan result and is rendered by ScanServiceError, not here.
  *   - None of these cards is the dispense decision; that is Module 9 (with the AI risk score). Cards state
  *     FINDINGS and next steps only — never "dispense" / "do not dispense" wording derived from scanResult.
- *     The decision slot above the card (TrustDecisionPlaceholder) stays identical for every result.
+ *   - Module 15: the one "AI Risk: N%" line inside a card is deliberately quiet — small, muted, no band, no colour,
+ *     no icon, no reasons. It is the locked-at-confirmation value, display only, and must never gate dispensing.
  *   - The mapping is documented in frontend/doctor-portal/README.md ("Scan result → visual treatment");
  *     update that table in the same change if you alter any card's severity treatment.
  *   - Module 14: the per-medicine DispensingPanel under verified / tampered / stale_version cards is a quantity
@@ -51,7 +52,6 @@ import ChangeList from '../../components/ChangeList';
 import type { Medicine, PrescriptionVersion, QrPayload, ScanResult, VersionDiff } from '../../types';
 import { isRevocationDiff } from '../../types';
 import DispensingPanel, { dispensingVersionFor } from './DispensingPanel';
-import TrustDecisionPlaceholder from './TrustDecisionPlaceholder';
 import { usePrescriptionDetails } from './usePrescriptionDetails';
 
 export type InputSource = 'camera' | 'manual' | 'follow-up';
@@ -104,6 +104,16 @@ const TONES: Record<'green' | 'blue' | 'red' | 'orange' | 'greySuspicious' | 'gr
   greyTechnical: { frame: 'border-slate-200 bg-white', iconWrap: 'bg-slate-100 text-slate-500', title: 'text-slate-800', body: 'text-slate-600' },
 };
 
+/** Module 15: plain, de-emphasized text. Deliberately no band, colour, icon or reasons. */
+function AiRiskLine({ display }: { display: ScanResult['pharmacistRiskDisplay'] }) {
+  if (!display) return null;
+  return (
+    <p data-testid="ai-risk-line" className="mt-4 text-xs text-slate-500">
+      AI Risk: {display.percentage === null ? 'not recorded' : `${display.percentage}%`}
+    </p>
+  );
+}
+
 function ResultShell({
   testId,
   tone,
@@ -111,6 +121,7 @@ function ResultShell({
   eyebrow,
   title,
   lead,
+  aiRisk,
   children,
 }: {
   testId: string;
@@ -119,6 +130,7 @@ function ResultShell({
   eyebrow: string;
   title: string;
   lead: ReactNode;
+  aiRisk?: ScanResult['pharmacistRiskDisplay'];
   children?: ReactNode;
 }) {
   return (
@@ -136,6 +148,7 @@ function ResultShell({
         </div>
       </div>
       {children && <div className="mt-5 space-y-4">{children}</div>}
+      <AiRiskLine display={aiRisk} />
     </section>
   );
 }
@@ -220,6 +233,7 @@ function VerifiedCard({ result }: CardProps) {
   return (
     <ResultShell
       testId="result-verified"
+      aiRisk={result.pharmacistRiskDisplay}
       tone={TONES.green}
       icon={CircleCheck}
       eyebrow="Verified"
@@ -261,6 +275,7 @@ function StaleVersionCard({ result, onVerifyPayload }: CardProps) {
   return (
     <ResultShell
       testId="result-stale_version"
+      aiRisk={result.pharmacistRiskDisplay}
       tone={TONES.blue}
       icon={Info}
       eyebrow="Newer version available"
@@ -389,6 +404,7 @@ function TamperedCard({ result }: CardProps) {
   return (
     <ResultShell
       testId="result-tampered"
+      aiRisk={result.pharmacistRiskDisplay}
       tone={TONES.red}
       icon={ShieldAlert}
       eyebrow="Tampered"
@@ -440,6 +456,7 @@ function ForgedCard({ result }: CardProps) {
   return (
     <ResultShell
       testId="result-forged"
+      aiRisk={result.pharmacistRiskDisplay}
       tone={TONES.red}
       icon={Link2Off}
       eyebrow="Forged"
@@ -470,6 +487,7 @@ function RevokedCard({ result }: CardProps) {
   return (
     <ResultShell
       testId="result-revoked"
+      aiRisk={result.pharmacistRiskDisplay}
       tone={TONES.red}
       icon={Ban}
       eyebrow="Revoked"
@@ -502,6 +520,7 @@ function ProviderIdentityCard({ result }: CardProps) {
   return (
     <ResultShell
       testId="result-provider_identity_issue"
+      aiRisk={result.pharmacistRiskDisplay}
       tone={TONES.orange}
       icon={UserX}
       eyebrow="Prescriber identity concern"
@@ -587,7 +606,6 @@ export default function ScanResultView({
 
   return (
     <div className="space-y-3" data-testid="scan-result" data-scan-result={result.scanResult}>
-      <TrustDecisionPlaceholder />
       <Card key={`${result.prescriptionId}:${result.versionNumber}:${result.scannedAt}`} result={result} onVerifyPayload={onVerifyPayload} />
       {dispensingVersionFor(result) !== null && <DispensingPanel key={`dispense:${result.prescriptionId}:${result.scannedAt}`} result={result} />}
       <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-xs text-slate-500">

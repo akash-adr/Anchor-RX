@@ -11,6 +11,9 @@ const { LedgerError } = require('../ledger/ledgerService');
 const { AuditTimelineError } = require('../audit/timeline');
 const { AuditRecheckError } = require('../audit/recheck');
 const { AuditSummaryError } = require('../audit/summary');
+const { RiskPreviewError } = require('../ml/riskPreview');
+const { ScoringPayloadError } = require('../ml/buildScoringPayload');
+const { AIServiceError } = require('../ml/scoreClient');
 
 class ApiError extends Error {
   constructor(status, code, message) {
@@ -55,6 +58,22 @@ function handleChangeError(err, res, next) {
   return next(err);
 }
 
+/**
+ * preview-risk / confirm (Module 15): invalid input 400; expired/used/unknown preview token 410 (re-review and resubmit);
+ * AI service down 503 (no preview is cached, so nothing can be confirmed without a shown risk).
+ */
+function handleRiskPreviewError(err, res, next) {
+  if (err instanceof ApiError) return sendError(res, err.status, err.code, err.message);
+  if (err instanceof RiskPreviewError) {
+    return sendError(res, err.code === 'RISK_PREVIEW_EXPIRED' ? 410 : 400, err.code, err.message);
+  }
+  if (err instanceof AIServiceError) {
+    return sendError(res, 503, err.code, 'The AI risk service is unavailable, so the risk assessment could not be shown. Try again shortly.');
+  }
+  if (err instanceof ScoringPayloadError || err instanceof RepositoryError) return sendError(res, 400, err.code, err.message);
+  return next(err);
+}
+
 /** reads — unknown prescription is 404, malformed identifiers are 400. */
 function handleReadError(err, res, next) {
   if (err instanceof ApiError) return sendError(res, err.status, err.code, err.message);
@@ -92,4 +111,4 @@ function errorMiddleware(err, req, res, next) {
   return sendError(res, 500, 'INTERNAL_ERROR');
 }
 
-module.exports = { ApiError, handleCreateError, handleChangeError, handleReadError, handleAuditError, notFoundHandler, errorMiddleware };
+module.exports = { ApiError, handleRiskPreviewError, handleCreateError, handleChangeError, handleReadError, handleAuditError, notFoundHandler, errorMiddleware };

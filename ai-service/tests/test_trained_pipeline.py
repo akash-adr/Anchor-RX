@@ -47,10 +47,10 @@ def test_serialized_artifacts_load_as_one_fitted_pipeline(artifacts):
     "payload",
     [
         make_payload(),
-        make_payload(drugName="Amoxicillin", drugClass="penicillin antibiotic", doseValue="500.000",
-                     frequency="three times daily", durationDays=7, patientAge=34, patientWeight=68.0, patientVelocity=0),
+        make_payload(drugName="Atorvastatin", drugClass="statin", doseValue="20.000",
+                     frequency="once daily", durationDays=30, patientAge=62, patientWeight=78.0, patientVelocity=1),
     ],
-    ids=["atorvastatin-20mg-daily-30d", "amoxicillin-500mg-tds-7d"],
+    ids=["amoxicillin-500mg-tds-7d", "atorvastatin-20mg-daily-30d"],
 )
 def test_known_normal_prescription_gets_a_low_sub_score(artifacts, payload):
     result = score(artifacts, payload)
@@ -61,9 +61,9 @@ def test_known_normal_prescription_gets_a_low_sub_score(artifacts, payload):
 def test_grossly_implausible_prescription_scores_far_above_normal(artifacts):
     """Smoke test only (not evaluation): 50 g IV amoxicillin every 15 minutes for a year, from a cardiologist."""
     extreme = make_payload(
-        drugName="Amoxicillin", drugClass="penicillin antibiotic", doseValue="50000.000", frequency="every 15 minutes",
+        drugName="Amoxicillin", drugClass="antibiotic", doseValue="50000.000", frequency="every 15 minutes",
         durationDays=365, route="iv", patientAge=19, patientWeight=45.0, drugCombinationFlag=True,
-        overlappingPrescriptionIds=["RX-X"], providerDrugClassHistory={"statin": 60, "calcium channel blocker": 40},
+        overlappingPrescriptionIds=["RX-X"], providerDrugClassHistory={"statin": 60, "arb": 40},
         patientVelocity=6,
     )
     normal, weird = score(artifacts, make_payload()), score(artifacts, extreme)
