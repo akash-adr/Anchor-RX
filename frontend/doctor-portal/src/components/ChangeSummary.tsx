@@ -1,5 +1,6 @@
 import type { AmendResult } from '../types';
 import ChangeList from './ChangeList';
+import QrCodeCard from './QrCodeCard';
 
 /** "What changed" card, rendered straight from the diff the API returned (display only, not verification). */
 export default function ChangeSummary({ result }: { result: AmendResult }) {
@@ -20,11 +21,20 @@ export default function ChangeSummary({ result }: { result: AmendResult }) {
           </p>
         </div>
       </div>
-      {diff.changedFields.length === 0 ? (
-        <p className="px-5 py-3 text-sm text-slate-600">No field-level changes in this version.</p>
-      ) : (
-        <ChangeList changes={diff.changedFields} />
-      )}
+      <div className="grid gap-4 md:grid-cols-[1fr_auto]">
+        {diff.changedFields.length === 0 ? (
+          <p className="px-5 py-3 text-sm text-slate-600">No field-level changes in this version.</p>
+        ) : (
+          <ChangeList changes={diff.changedFields} />
+        )}
+        <div className="flex justify-center border-t border-slate-100 px-5 py-4 md:border-l md:border-t-0">
+          <QrCodeCard
+            qrImage={result.qrImage}
+            qrPayload={result.qrPayload}
+            caption={`New QR for v${result.versionNumber}. QRs for earlier versions now point to a superseded version.`}
+          />
+        </div>
+      </div>
     </section>
   );
 }

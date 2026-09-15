@@ -4,20 +4,46 @@
     {
       "name": "anchor-api",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "api"],
+      "runtimeArgs": [
+        "run",
+        "api"
+      ],
       "port": 4000
     },
     {
       "name": "anchor-api-test-db",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["DB_NAME=anchor_rx_test", "node", "backend/api/server.js"],
+      "runtimeArgs": [
+        "DB_NAME=anchor_rx_test",
+        "node",
+        "backend/api/server.js"
+      ],
       "port": 4000
     },
     {
       "name": "doctor-portal",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "frontend/doctor-portal", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "frontend/doctor-portal",
+        "run",
+        "dev"
+      ],
       "port": 5173
+    },
+    {
+      "name": "anchor-ai-service",
+      "runtimeExecutable": "ai-service/.venv/bin/uvicorn",
+      "runtimeArgs": [
+        "main:app",
+        "--app-dir",
+        "ai-service",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ],
+      "port": 8000
     }
   ]
 }

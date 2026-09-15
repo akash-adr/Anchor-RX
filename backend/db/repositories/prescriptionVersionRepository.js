@@ -31,7 +31,7 @@ const { createLedgerService } = require('../../ledger/ledgerService');
 const SELECT_COLUMNS = `
   id, prescription_id, version_number, parent_version_id,
   patient_id, provider_id,
-  drug_name, dosage_value, dosage_unit, frequency, duration_days, drug_class,
+  drug_name, dosage_value, dosage_unit, frequency, duration_days, route, drug_class,
   status, created_at, amended_at, amended_by_provider_id, reason,
   salt, field_hashes, integrity_root, ledger_anchor_ref`;
 

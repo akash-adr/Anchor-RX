@@ -37,7 +37,12 @@ async function insertReferenceData(pool, { providers = [], patients = [], pharma
     );
   }
   for (const p of patients) {
-    await pool.execute('INSERT INTO patient (patient_id, name, dob) VALUES (?, ?, ?)', [p.patient_id, p.name, p.dob]);
+    await pool.execute('INSERT INTO patient (patient_id, name, dob, weight) VALUES (?, ?, ?, ?)', [
+      p.patient_id,
+      p.name,
+      p.dob,
+      p.weight ?? null,
+    ]);
   }
   for (const p of pharmacies) {
     await pool.execute('INSERT INTO pharmacy (pharmacy_id, name, license_number) VALUES (?, ?, ?)', [

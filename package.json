@@ -8,7 +8,9 @@
     "seed": "node backend/db/seed/seed.js",
     "demo:tamper": "node backend/db/seed/tamperDemo.js",
     "api": "node backend/api/server.js",
-    "doctor-portal": "npm --prefix frontend/doctor-portal run dev"
+    "doctor-portal": "npm --prefix frontend/doctor-portal run dev",
+    "seed:demo": "node backend/db/seed/pharmacyDemoScenarios.js",
+    "demo:payloads": "node backend/db/seed/printDemoPayloads.js"
   },
   "keywords": [],
   "author": "",
@@ -18,11 +20,14 @@
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "mysql2": "^3.24.4"
+    "mysql2": "^3.24.4",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "jest": "^30.5.1"
+    "jest": "^30.5.1",
+    "jsqr": "^1.4.0",
+    "pngjs": "^7.0.0"
   },
   "jest": {
     "testEnvironment": "node",

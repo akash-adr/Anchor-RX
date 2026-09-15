@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { CreatedPrescription } from '../types';
+import QrCodeCard from './QrCodeCard';
 
 function truncateHash(hash: string) {
   return `${hash.slice(0, 10)}…${hash.slice(-8)}`;
@@ -83,14 +84,7 @@ export default function ConfirmationCard({
           </div>
         </dl>
 
-        <div
-          role="img"
-          aria-label="QR code placeholder, pending Module 6"
-          className="flex h-44 w-44 flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 p-3 text-center text-sm text-slate-500"
-        >
-          <span className="font-medium text-slate-600">QR code</span>
-          <span>pending Module 6</span>
-        </div>
+        <QrCodeCard qrImage={result.qrImage} qrPayload={result.qrPayload} caption="Give to the patient — scanned at the pharmacy." />
       </div>
 
       <div className="flex flex-wrap gap-3 border-t border-slate-100 px-6 py-4">

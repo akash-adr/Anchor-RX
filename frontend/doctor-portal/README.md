@@ -22,11 +22,73 @@ All HTTP calls live in [`src/api.ts`](src/api.ts); components never call `fetch`
 |---|---|---|---|
 | Provider selection | Page load | `GET /api/providers` | `ProviderLogin.tsx` |
 | New prescription | Page load (patient picker) | `GET /api/patients` | `CreatePrescription.tsx` |
-| New prescription | **Authorize & anchor** | `POST /api/prescriptions` | `CreatePrescription.tsx` |
+| New prescription | **Authorize & anchor** | `POST /api/prescriptions` (response includes `qrPayload` + `qrImage`) | `CreatePrescription.tsx` |
 | Amend | **Look up** | `GET /api/prescriptions/:id/provenance` (latest version = current state) | `AmendPrescription.tsx` |
-| Amend | **Submit amendment** | `POST /api/prescriptions/:id/amend` → then re-fetches provenance | `AmendPrescription.tsx` |
+| Amend | **Submit amendment** | `POST /api/prescriptions/:id/amend` (response includes the new version's `qrPayload` + `qrImage`) → then re-fetches provenance | `AmendPrescription.tsx` |
 | Amend → Revoke | **Confirm revocation** (modal) | `POST /api/prescriptions/:id/revoke` → then re-fetches provenance | `RevokeDialog.tsx` |
+| Pharmacy sign-in | Page load | `GET /api/pharmacies` | `pharmacy/PharmacyLogin.tsx` |
+| Pharmacy scan | Camera decode or **Verify payload** | `POST /api/scan` (+ `GET /api/prescriptions/:id/provenance` and `GET /api/patients` for card details) | `pharmacy/PharmacyScanScreen.tsx` |
 | History | **Show history** | `GET /api/prescriptions/:id/provenance`, plus `GET /api/providers` for display names | `HistoryView.tsx` |
+
+## Landing page logo video
+
+`public/` holds two encodings of the same transparent 6-second logo loop; `<video>` lists both and each browser plays
+the first it supports:
+
+| File | Codec | Played by |
+|---|---|---|
+| `anchor-rx-logo-alpha.mov` | HEVC with alpha (`hvc1`), declared `video/quicktime; codecs="hvc1"` | Safari (macOS, iOS) |
+| `anchor-rx-logo-transparent.webm` | VP9 with alpha | Chrome, Edge, Firefox |
+
+Regenerate the `.mov` (macOS) — note `-c:v libvpx-vp9` BEFORE `-i`: ffmpeg's built-in VP9 decoder silently drops the
+alpha channel, which would produce an opaque `.mov`:
+
+```bash
+ffmpeg -c:v libvpx-vp9 -i anchor-rx-logo-transparent.webm -c:v hevc_videotoolbox -alpha_quality 0.9 -tag:v hvc1 -an anchor-rx-logo-alpha.mov
+```
+
+**Deploying:** the host must serve `.mov` as `video/quicktime` and `.webm` as `video/webm` (and support HTTP range
+requests). Some static hosts send unfamiliar extensions as `application/octet-stream`, which silently breaks Safari
+(it shows the static poster) while everything still works on localhost. Check with
+`curl -I https://<host>/anchor-rx-logo-alpha.mov`. The poster is shown only for "reduce motion" or when no source plays.
+
+## QR codes
+
+The QR shown after creating or amending comes from the API as a PNG data URL (`qrImage`) together with
+the exact JSON it encodes (`qrPayload`): `{ prescriptionId, versionNumber, issuedAt }` — a pointer only,
+never clinical data. Nothing is stored; the API regenerates it from the version's ID, number and
+`created_at`, so the same version always yields the same QR. If generation ever fails, the version is still
+saved and anchored and the portal shows "QR code unavailable".
+
+## Pharmacy Portal: scan result → visual treatment
+
+The Pharmacy Portal (`/pharmacy/scan`) sends every scan — camera or manual paste — through one `submitScan` →
+`POST /api/scan`, and renders one card per `scanResult` (`src/pharmacy/results/ScanResultCards.tsx`).
+**Visual urgency must match real urgency.** If you change any card's colour, icon, weight or wording, check it
+against this table and update the table in the same change — do not harmonize the cards into one template.
+
+| `scanResult` | Severity | Colour / frame | Icon | Card title | Tone and content rules |
+|---|---|---|---|---|---|
+| `verified` | Low — clear | Green (`emerald`) | CircleCheck | Prescription verified | Calm, minimal friction; short summary (drug, dose, frequency, duration, patient, prescriber) |
+| `stale_version` | Informational | Blue (`sky`), no ring | Info | Updated to version N | Explicitly NOT alarming; shows current version marked "not yet verified by this scan", what changed, and a **Verify version N** action |
+| `tampered` | Urgent | Red + ring | ShieldAlert | Prescription data was altered | Names each altered field in plain language ("Dosage was altered after issuance."); no clinical data shown |
+| `forged` | Urgent | Red + ring | Link2Off | Verification record doesn't match issuance history | About the anchored record / ledger chain — never "a field was changed"; ledger ✓/✗ rows |
+| `revoked` | Urgent | Red + ring | Ban | Prescription revoked by the prescriber | Withdrawn deliberately; shows revocation reason, who and when |
+| `provider_identity_issue` | Identity concern | Orange + ring | UserX | The prescribing provider's status is currently {status} | About WHO prescribed, not what; notes field/ledger checks were not run |
+| `unknown_prescription` | Suspicious, neutral | Grey, filled (`slate-100`) | CircleHelp | No such prescription exists | Never issued; possibly fabricated — distinct from a real prescription failing a check |
+| `malformed_qr` | Technical | Light grey / white | ScanLine | This isn't a readable Anchor Rx QR code | Reading error; invites a rescan; no security language |
+
+Not scan results — rendered separately and must stay visually distinct from every card above:
+
+| State | Treatment | Rule |
+|---|---|---|
+| Request failed (network, timeout, 5xx, unreadable response) | Dark slate panel "Unable to reach verification service" + Retry | Says **"This prescription was NOT checked"** — never styled like a result |
+| Unknown pharmacy (400 `UNKNOWN_PHARMACY`) | Same dark panel, pharmacy variant + Switch pharmacy | Setup problem, not a scan outcome |
+| Trust decision | Dashed grey "Trust engine: Pending integration" box **above** every card | Identical for every result. No Dispense / Review / Block wording or colour may be derived from `scanResult` in the frontend — that decision belongs to Module 9 |
+
+Cards state findings and next steps only; none of them says "dispense" or "do not dispense".
+The session "Scan history" list (plain React state, lost on reload) uses the same colour families as small dots and
+logs failed requests as "not checked"; the authoritative audit trail is `verification_event` (Module 10).
 
 ## Client-side convenience vs. backend enforcement
 

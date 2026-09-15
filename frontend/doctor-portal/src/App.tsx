@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { useProvider } from './context/ProviderContext';
 import AmendPrescription from './components/AmendPrescription';
 import CreatePrescription from './components/CreatePrescription';
@@ -14,6 +15,10 @@ type View =
 export default function App() {
   const { provider, clearProvider } = useProvider();
   const [view, setView] = useState<View>({ name: 'create' });
+
+  useEffect(() => {
+    document.title = 'Anchor Rx · Doctor Portal';
+  }, []);
 
   const openAmend = (prescriptionId?: string) => setView({ name: 'amend', prescriptionId, nonce: Date.now() });
   const openHistory = (prescriptionId?: string) => setView({ name: 'history', prescriptionId, nonce: Date.now() });
@@ -31,7 +36,7 @@ export default function App() {
     <div className="min-h-screen">
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2.5">
+          <Link to="/" aria-label="Anchor Rx home" className="flex items-center gap-2.5 rounded-lg focus-visible:outline-2 focus-visible:outline-teal-600">
             <span aria-hidden className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-700 text-lg text-white">
               ⚓
             </span>
@@ -39,7 +44,7 @@ export default function App() {
               <p className="font-semibold tracking-tight">Anchor Rx</p>
               <p className="text-xs text-slate-500">Doctor Portal</p>
             </div>
-          </div>
+          </Link>
 
           {provider && (
             <nav aria-label="Doctor portal" className="order-last flex w-full gap-1 sm:order-none sm:w-auto">

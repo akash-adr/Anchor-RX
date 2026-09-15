@@ -11,8 +11,10 @@ const cors = require('cors');
 const { getPool, closePool } = require('../db/connection');
 const { createPrescriptionVersionRepository } = require('../db/repositories/prescriptionVersionRepository');
 const { createAmendmentService } = require('../versioning/amendmentService');
+const { createPharmacyVerification } = require('../qr/pharmacyVerification');
 const { createPrescriptionRouter } = require('./routes/prescriptions');
 const { createReferenceRouter } = require('./routes/reference');
+const { createPharmacyRouter } = require('./routes/pharmacy');
 const { notFoundHandler, errorMiddleware } = require('./errors');
 
 const DEFAULT_PORT = 4000;
@@ -30,6 +32,7 @@ function createApp({
   pool,
   repository = createPrescriptionVersionRepository(pool),
   amendmentService = createAmendmentService(pool, { repository }),
+  pharmacyVerification = createPharmacyVerification(pool, { repository, amendmentService }),
   corsOrigins = parseCorsOrigins(process.env.CORS_ORIGINS),
 } = {}) {
   const app = express();
@@ -40,6 +43,7 @@ function createApp({
   app.get('/api/health', (req, res) => res.json({ ok: true }));
   app.use('/api/prescriptions', createPrescriptionRouter({ repository, amendmentService }));
   app.use('/api', createReferenceRouter({ pool }));
+  app.use('/api', createPharmacyRouter({ pool, pharmacyVerification }));
 
   app.use(notFoundHandler);
   app.use(errorMiddleware);

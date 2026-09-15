@@ -9,9 +9,11 @@ import type {
   CreatedPrescription,
   NewPrescription,
   Patient,
+  Pharmacy,
   Provenance,
   Provider,
   RevokeResult,
+  ScanResult,
 } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '';
@@ -118,4 +120,13 @@ export function getProviders(): Promise<Provider[]> {
 
 export function getPatients(): Promise<Patient[]> {
   return request('GET', '/api/patients');
+}
+
+export function getPharmacies(): Promise<Pharmacy[]> {
+  return request('GET', '/api/pharmacies');
+}
+
+/** Any scan the server evaluated (including malformed_qr / unknown_prescription) resolves; only a failed request rejects. */
+export function scanPrescription(qrPayloadRaw: string, pharmacyId: string): Promise<ScanResult> {
+  return request('POST', '/api/scan', { qrPayloadRaw, pharmacyId });
 }

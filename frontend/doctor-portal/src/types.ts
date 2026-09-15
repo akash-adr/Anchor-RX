@@ -6,6 +6,44 @@ export interface Provider {
   name: string;
 }
 
+export interface Pharmacy {
+  pharmacyId: string;
+  name: string;
+}
+
+/** Module 6 scan outcomes, as returned by POST /api/scan. There is NO dispense decision here (Module 9). */
+export type ScanResultCode =
+  | 'verified'
+  | 'tampered'
+  | 'forged'
+  | 'revoked'
+  | 'stale_version'
+  | 'provider_identity_issue'
+  | 'unknown_prescription'
+  | 'malformed_qr';
+
+export interface ScanResult {
+  scanResult: ScanResultCode;
+  prescriptionId: string | null;
+  versionNumber: number | null;
+  fieldVerification: {
+    valid: boolean;
+    tamperedFields: string[];
+    integrityRootMatch: boolean;
+    unverifiable?: boolean;
+    error?: string;
+  } | null;
+  ledgerVerification: {
+    anchored: boolean;
+    integrityRootMatch: boolean;
+    chainIntact: boolean;
+    anchoredAt: string | null;
+  } | null;
+  providerStatus: string | null;
+  currentActiveVersion: number | null;
+  scannedAt: string;
+}
+
 export interface Patient {
   patientId: string;
   name: string;
@@ -22,11 +60,20 @@ export interface NewPrescription {
   drugClass: string;
 }
 
+/** Exactly what the QR code encodes: a pointer for server-side lookup, never clinical data. */
+export interface QrPayload {
+  prescriptionId: string;
+  versionNumber: number;
+  issuedAt: string;
+}
+
 export interface CreatedPrescription {
   prescriptionId: string;
   versionNumber: number;
   integrityRoot: string;
   ledgerAnchorRef: string;
+  qrPayload: QrPayload | null; // null only if QR generation failed after the version was committed
+  qrImage: string | null; // PNG data URL
 }
 
 // Values are sent as entered (strings); the API validates them. durationDays may be a numeric string.
@@ -73,6 +120,8 @@ export function isRevocationDiff(diff: VersionDiff): diff is RevocationDiff {
 export interface AmendResult {
   versionNumber: number;
   diff: VersionDiff;
+  qrPayload: QrPayload | null;
+  qrImage: string | null;
 }
 
 export interface RevokeResult {

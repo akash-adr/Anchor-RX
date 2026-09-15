@@ -21,11 +21,17 @@ const REFERENCE_DATA = {
     { provider_id: 'PRV-003', name: 'Dr. Kiran Das (synthetic)', license_number: 'DEMO-MED-10003', credentials: 'MBBS', status: 'inactive' },
   ],
   patients: [
-    { patient_id: 'PAT-001', name: 'Demo Patient One', dob: '1985-04-12' },
-    { patient_id: 'PAT-002', name: 'Demo Patient Two', dob: '1962-11-03' },
-    { patient_id: 'PAT-003', name: 'Demo Patient Three', dob: '1978-07-21' },
+    // weight (kg) is synthetic; PAT-003 deliberately has none, to exercise the 70 kg placeholder in ML payloads.
+    { patient_id: 'PAT-001', name: 'Demo Patient One', dob: '1985-04-12', weight: 68.5 },
+    { patient_id: 'PAT-002', name: 'Demo Patient Two', dob: '1962-11-03', weight: 82.0 },
+    { patient_id: 'PAT-003', name: 'Demo Patient Three', dob: '1978-07-21', weight: null },
   ],
-  pharmacies: [{ pharmacy_id: 'PHM-001', name: 'Demo Campus Pharmacy', license_number: 'DEMO-PHM-20001' }],
+  pharmacies: [
+    { pharmacy_id: 'PHM-001', name: 'Demo Campus Pharmacy', license_number: 'DEMO-PHM-20001' },
+    // Fictional names on purpose — no real pharmacy chains in demo data.
+    { pharmacy_id: 'PHM-002', name: 'Marina Care Pharmacy — Tambaram (synthetic)', license_number: 'DEMO-PHM-20002' },
+    { pharmacy_id: 'PHM-003', name: 'Harbour Health Chemists — Chennai Central (synthetic)', license_number: 'DEMO-PHM-20003' },
+  ],
 };
 
 async function seed(pool) {

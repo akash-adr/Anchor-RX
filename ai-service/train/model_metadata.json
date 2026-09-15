@@ -1,0 +1,188 @@
+{
+  "model_version": "isolation-forest-placeholder-v1",
+  "trained_at": "2026-09-14T18:54:38+00:00",
+  "training_seconds": 0.224,
+  "versions": {
+    "python": "3.13.5",
+    "scikit_learn": "1.9.1",
+    "numpy": "2.5.3",
+    "pandas": "3.0.5"
+  },
+  "corpus": {
+    "path": "data/generated/normal_corpus.jsonl",
+    "generator": "data/generate_normal_corpus.py",
+    "generator_version": "placeholder-v1",
+    "seed": 20260915,
+    "rows": 4000,
+    "sha256": "1b356cd3a17c45faed49a2640c759fb6580afd21c8c32d99c6791379c3476450"
+  },
+  "feature_names": [
+    "dose_value",
+    "dose_per_kg",
+    "frequency",
+    "duration_days",
+    "route",
+    "age",
+    "weight",
+    "drug_class",
+    "drug_combination_flag",
+    "drug_rarity_score",
+    "provider_pattern_score",
+    "patient_velocity",
+    "dose_frequency_product"
+  ],
+  "encoded_feature_names": [
+    "numeric__dose_value",
+    "numeric__dose_per_kg",
+    "numeric__frequency",
+    "numeric__duration_days",
+    "numeric__age",
+    "numeric__weight",
+    "numeric__drug_combination_flag",
+    "numeric__drug_rarity_score",
+    "numeric__provider_pattern_score",
+    "numeric__patient_velocity",
+    "numeric__dose_frequency_product",
+    "categorical__route_iv",
+    "categorical__route_oral",
+    "categorical__drug_class_analgesic",
+    "categorical__drug_class_biguanide",
+    "categorical__drug_class_calcium channel blocker",
+    "categorical__drug_class_cephalosporin",
+    "categorical__drug_class_leukotriene receptor antagonist",
+    "categorical__drug_class_macrolide antibiotic",
+    "categorical__drug_class_nsaid",
+    "categorical__drug_class_penicillin antibiotic",
+    "categorical__drug_class_statin"
+  ],
+  "isolation_forest_params": {
+    "n_estimators": 300,
+    "max_samples": "auto",
+    "max_features": 1.0,
+    "bootstrap": false,
+    "contamination": "auto",
+    "random_state": 42,
+    "n_jobs": 1
+  },
+  "training_scores": {
+    "raw": {
+      "min": 0.396416,
+      "p50": 0.447381,
+      "p90": 0.505089,
+      "p99": 0.5747,
+      "p99.9": 0.604353,
+      "max": 0.618529
+    },
+    "normalized": {
+      "min": 0.0,
+      "p50": 0.005,
+      "p90": 13.601,
+      "p99": 30.0145,
+      "p99.9": 70.00116,
+      "max": 89.12
+    },
+    "share_normalized_above_30": 0.01,
+    "share_normalized_above_70": 0.001
+  },
+  "calibration": {
+    "method": "quantile_piecewise_linear_v1",
+    "raw_score": "-IsolationForest.score_samples(x); higher = more anomalous",
+    "anchors": [
+      {
+        "training_quantile": 0.5,
+        "raw": 0.4473808224948845,
+        "normalized": 0.0
+      },
+      {
+        "training_quantile": 0.99,
+        "raw": 0.574700124894655,
+        "normalized": 30.0
+      },
+      {
+        "training_quantile": 0.999,
+        "raw": 0.6043525273683653,
+        "normalized": 70.0
+      }
+    ],
+    "beyond_last_anchor": "same slope as p99→p99.9, capped at 100"
+  },
+  "feature_baselines": {
+    "method": "median_v1",
+    "global": {
+      "dose_value": 475.0,
+      "frequency": 1.0,
+      "duration_days": 7.0,
+      "age": 50.0,
+      "weight": 70.0,
+      "patient_velocity": 1.0,
+      "drug_rarity_score": 0.441894,
+      "provider_pattern_score": 0.0,
+      "route": "oral"
+    },
+    "by_drug_class": {
+      "analgesic": {
+        "dose_value": 650.0,
+        "frequency": 2.0,
+        "duration_days": 5.0,
+        "age": 42.0,
+        "route": "oral"
+      },
+      "biguanide": {
+        "dose_value": 850.0,
+        "frequency": 2.0,
+        "duration_days": 90.0,
+        "age": 56.5,
+        "route": "oral"
+      },
+      "calcium channel blocker": {
+        "dose_value": 5.0,
+        "frequency": 1.0,
+        "duration_days": 90.0,
+        "age": 62.0,
+        "route": "oral"
+      },
+      "cephalosporin": {
+        "dose_value": 500.0,
+        "frequency": 3.0,
+        "duration_days": 7.0,
+        "age": 42.0,
+        "route": "oral"
+      },
+      "leukotriene receptor antagonist": {
+        "dose_value": 10.0,
+        "frequency": 1.0,
+        "duration_days": 60.0,
+        "age": 39.0,
+        "route": "oral"
+      },
+      "macrolide antibiotic": {
+        "dose_value": 325.0,
+        "frequency": 1.0,
+        "duration_days": 5.0,
+        "age": 43.0,
+        "route": "oral"
+      },
+      "nsaid": {
+        "dose_value": 425.0,
+        "frequency": 2.0,
+        "duration_days": 7.0,
+        "age": 42.0,
+        "route": "oral"
+      },
+      "penicillin antibiotic": {
+        "dose_value": 650.0,
+        "frequency": 2.0,
+        "duration_days": 7.0,
+        "age": 42.0,
+        "route": "oral"
+      },
+      "statin": {
+        "dose_value": 20.0,
+        "frequency": 1.0,
+        "duration_days": 60.0,
+        "age": 62.0,
+        "route": "oral"
+      }
+    }
+  }
+}

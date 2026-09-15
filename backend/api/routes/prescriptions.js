@@ -3,6 +3,21 @@
 const express = require('express');
 const { toCreateInput, toAmendChanges, presentVersion, presentDiff } = require('../presenters');
 const { handleCreateError, handleChangeError, handleReadError } = require('../errors');
+const { buildVersionQr } = require('../../qr/qrEngine');
+
+/**
+ * QR for a version that is ALREADY committed and anchored. Regenerated per request, never stored.
+ * A failure here must not turn a successful create/amend into an error response (the doctor would
+ * assume nothing happened and create a duplicate), so it degrades to null and is logged.
+ */
+async function versionQr(row) {
+  try {
+    return await buildVersionQr(row);
+  } catch (err) {
+    console.error(`[api] QR generation failed for ${row.prescription_id} v${row.version_number}:`, err);
+    return { qrPayload: null, qrImage: null };
+  }
+}
 
 /**
  * Thin HTTP wrappers — no business logic here. Authorization, validation, hashing and anchoring all
@@ -16,11 +31,14 @@ function createPrescriptionRouter({ repository, amendmentService }) {
   router.post('/', async (req, res, next) => {
     try {
       const row = await repository.createPrescription(toCreateInput(req.body));
+      const { qrPayload, qrImage } = await versionQr(row);
       res.status(201).json({
         prescriptionId: row.prescription_id,
         versionNumber: row.version_number,
         integrityRoot: row.integrity_root,
         ledgerAnchorRef: row.ledger_anchor_ref,
+        qrPayload,
+        qrImage,
       });
     } catch (err) {
       handleCreateError(err, res, next);
@@ -39,7 +57,8 @@ function createPrescriptionRouter({ repository, amendmentService }) {
       );
       // The new version's parent is always version_number - 1.
       const diff = await amendmentService.diffVersions(prescriptionId, row.version_number - 1, row.version_number);
-      res.json({ versionNumber: row.version_number, diff: presentDiff(diff) });
+      const { qrPayload, qrImage } = await versionQr(row);
+      res.json({ versionNumber: row.version_number, diff: presentDiff(diff), qrPayload, qrImage });
     } catch (err) {
       handleChangeError(err, res, next);
     }
