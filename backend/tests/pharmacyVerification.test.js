@@ -99,7 +99,8 @@ async function scannedTextFromImage(prescriptionId, versionNumber) {
 
 /**
  * Scans and asserts the audit guarantee for that scan: exactly ONE new verification_event, whose result,
- * version reference, pharmacy and timestamp match what verifyScan returned.
+ * version reference, pharmacy and timestamp match what verifyScan returned — and whose event_id is the eventId
+ * verifyScan returned (Module 9 Step 2), in every branch.
  */
 async function scanExpectingOneEvent(rawScanData, { expectedVersionRowId }) {
   const before = await eventCount();
@@ -107,7 +108,7 @@ async function scanExpectingOneEvent(rawScanData, { expectedVersionRowId }) {
   const after = await eventCount();
 
   const [[event]] = await pool.query(
-    'SELECT prescription_version_id, pharmacy_id, result, `timestamp` FROM verification_event ORDER BY event_id DESC LIMIT 1',
+    'SELECT event_id, prescription_version_id, pharmacy_id, result, `timestamp` FROM verification_event ORDER BY event_id DESC LIMIT 1',
   );
 
   expect(after - before).toBe(1);
@@ -115,12 +116,15 @@ async function scanExpectingOneEvent(rawScanData, { expectedVersionRowId }) {
   expect(event.prescription_version_id).toBe(expectedVersionRowId);
   expect(event.pharmacy_id).toBe(PHARMACY_ID);
   expect(event.timestamp.getTime()).toBe(result.scannedAt.getTime());
+  expect(Number.isInteger(result.eventId)).toBe(true);
+  expect(result.eventId).toBe(event.event_id);
 
   return { result, event, eventsAdded: after - before };
 }
 
 const RESULT_KEYS = [
   'currentActiveVersion',
+  'eventId',
   'fieldVerification',
   'ledgerVerification',
   'prescriptionId',
@@ -192,6 +196,7 @@ describe('pharmacy scan precedence chain', () => {
       providerStatus: null,
       currentActiveVersion: null,
       scannedAt: expect.any(Date),
+      eventId: outcome.event.event_id, // logged even though there is no version to reference
     });
     expect(outcome.event.prescription_version_id).toBeNull();
   });

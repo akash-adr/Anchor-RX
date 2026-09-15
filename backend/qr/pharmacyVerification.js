@@ -86,8 +86,9 @@ function createPharmacyVerification(
    * @returns {Promise<{
    *   scanResult: string, prescriptionId: string|null, versionNumber: number|null,
    *   fieldVerification: object|null, ledgerVerification: object|null, providerStatus: string|null,
-   *   currentActiveVersion: number|null, scannedAt: Date
-   * }>} a field is null only when its check did not run
+   *   currentActiveVersion: number|null, scannedAt: Date, eventId: number
+   * }>} a field is null only when its check did not run; eventId is the verification_event row logged for
+   *   this scan — set in every branch (malformed_qr / unknown_prescription log a row too, with a null version id)
    */
   async function verifyScan(rawScanData, pharmacyId) {
     const scannedAt = new Date();
@@ -102,13 +103,15 @@ function createPharmacyVerification(
       providerStatus: null,
       currentActiveVersion: null,
       scannedAt,
+      eventId: null,
     };
 
     // The single exit: log exactly one verification_event, then return. If logging fails, this throws —
     // an unaudited verification result is never handed back.
     const finish = async (scanResult, prescriptionVersionId) => {
       result.scanResult = scanResult;
-      await pool.execute(INSERT_EVENT_SQL, [prescriptionVersionId, pharmacyId, scanResult, scannedAt]);
+      const [inserted] = await pool.execute(INSERT_EVENT_SQL, [prescriptionVersionId, pharmacyId, scanResult, scannedAt]);
+      result.eventId = inserted.insertId;
       return result;
     };
 

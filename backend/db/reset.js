@@ -4,6 +4,7 @@
 // self-referencing prescription_version chain can be truncated in one pass.
 // ledger_lock is intentionally absent: its single mutex row must survive resets.
 const TABLES = [
+  'trust_decision_log',
   'ledger_entry',
   'amendment_attempts',
   'delegated_amendments',
