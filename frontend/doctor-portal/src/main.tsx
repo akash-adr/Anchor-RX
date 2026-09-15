@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import './index.css';
 import App from './App';
+import AuditDetailScreen from './audit/AuditDetailScreen';
+import AuditLayout from './audit/AuditLayout';
+import AuditSummaryScreen from './audit/AuditSummaryScreen';
 import { PharmacyProvider } from './context/PharmacyContext';
 import { ProviderProvider } from './context/ProviderContext';
 import LandingPage from './landing/LandingPage';
@@ -43,6 +46,12 @@ createRoot(document.getElementById('root')!).render(
               </RequirePharmacy>
             }
           />
+        </Route>
+        {/* Audit Dashboard: /audit = summary list (start here), /audit/prescriptions/:id = live recheck + history.
+            ⚠ Prototype click-through only — no access control (see audit/AuditLayout.tsx). */}
+        <Route path="/audit" element={<AuditLayout />}>
+          <Route index element={<AuditSummaryScreen />} />
+          <Route path="prescriptions/:prescriptionId" element={<AuditDetailScreen />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

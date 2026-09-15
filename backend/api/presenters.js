@@ -3,26 +3,26 @@
 /**
  * Request/response shaping only: camelCase at the HTTP boundary, snake_case (the schema's names) inside.
  * dosageValue is passed through untouched — it stays the exact DECIMAL string (e.g. "500.000").
+ *
+ * Module 14: a prescription version has a `medicines` array. The repository and Module 3 take camelCase input
+ * directly, so create/amend bodies are passed through; only unknown TOP-LEVEL create keys are rejected here, and every
+ * value (including each medicine) is validated by the repository / amendment service.
  */
 
 const { ApiError } = require('./errors');
 
-const COLUMN_TO_API = Object.freeze({
-  patient_id: 'patientId',
-  provider_id: 'providerId',
+const CREATE_BODY_KEYS = Object.freeze(['patientId', 'providerId', 'heightCm', 'weightKg', 'medicines']);
+
+// Stored medicine column → API field name (also used for field names in amendment diffs).
+const MEDICINE_COLUMN_TO_API = Object.freeze({
   drug_name: 'drugName',
+  drug_class: 'drugClass',
   dosage_value: 'dosageValue',
   dosage_unit: 'dosageUnit',
   frequency: 'frequency',
   duration_days: 'durationDays',
-  drug_class: 'drugClass',
+  quantity_prescribed: 'quantityPrescribed',
 });
-
-const CREATE_BODY_TO_COLUMN = Object.freeze(
-  Object.fromEntries(Object.entries(COLUMN_TO_API).map(([column, apiKey]) => [apiKey, column])),
-);
-
-const camelToSnake = (key) => key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -31,31 +31,41 @@ function toCreateInput(body) {
   if (!isPlainObject(body)) {
     throw new ApiError(400, 'INVALID_INPUT', 'Request body must be a JSON object');
   }
-  const unknown = Object.keys(body).filter((key) => !(key in CREATE_BODY_TO_COLUMN));
+  const unknown = Object.keys(body).filter((key) => !CREATE_BODY_KEYS.includes(key));
   if (unknown.length > 0) {
-    throw new ApiError(
-      400,
-      'FIELD_NOT_ALLOWED',
-      `Unknown field(s): ${unknown.join(', ')} (allowed: ${Object.keys(CREATE_BODY_TO_COLUMN).join(', ')})`,
-    );
+    throw new ApiError(400, 'FIELD_NOT_ALLOWED', `Unknown field(s): ${unknown.join(', ')} (allowed: ${CREATE_BODY_KEYS.join(', ')})`);
   }
   const input = {};
-  for (const [apiKey, column] of Object.entries(CREATE_BODY_TO_COLUMN)) {
-    if (body[apiKey] !== undefined) input[column] = body[apiKey];
+  for (const key of CREATE_BODY_KEYS) {
+    if (body[key] !== undefined) input[key] = body[key];
   }
   return input;
 }
 
 /**
- * Amendment `changes` → column names. EVERY key is converted and passed through (not just the four
- * amendable ones), so Module 3 sees e.g. patient_id, returns its specific rejection, and logs the attempt.
+ * Amendment `changes` ({ medicineId, ...fields }) are passed through UNCHANGED — every key, not just the amendable
+ * ones — so Module 3 sees e.g. patientId or addMedicine, returns its specific rejection, and logs the attempt.
  */
 function toAmendChanges(changes) {
-  if (!isPlainObject(changes)) return changes; // Module 3 rejects and logs non-object input
-  return Object.fromEntries(Object.entries(changes).map(([key, value]) => [camelToSnake(key), value]));
+  return changes;
 }
 
-/** prescription_version row → API shape. salt and field_hashes are deliberately not exposed. */
+/** prescription_medicine row → API shape. */
+function presentMedicine(row) {
+  return {
+    medicineId: row.medicine_id,
+    sequenceNumber: row.sequence_number,
+    drugName: row.drug_name,
+    drugClass: row.drug_class,
+    dosageValue: row.dosage_value,
+    dosageUnit: row.dosage_unit,
+    frequency: row.frequency,
+    durationDays: row.duration_days,
+    quantityPrescribed: row.quantity_prescribed,
+  };
+}
+
+/** prescription_version row (with its medicines) → API shape. salt and field_hashes are deliberately not exposed. */
 function presentVersion(row) {
   return {
     id: row.id,
@@ -64,12 +74,9 @@ function presentVersion(row) {
     parentVersionId: row.parent_version_id,
     patientId: row.patient_id,
     providerId: row.provider_id,
-    drugName: row.drug_name,
-    dosageValue: row.dosage_value,
-    dosageUnit: row.dosage_unit,
-    frequency: row.frequency,
-    durationDays: row.duration_days,
-    drugClass: row.drug_class,
+    heightCm: row.height_cm,
+    weightKg: row.weight_kg,
+    medicines: (row.medicines || []).map(presentMedicine),
     status: row.status,
     createdAt: row.created_at,
     amendedAt: row.amended_at,
@@ -84,8 +91,8 @@ function presentVersion(row) {
 function presentDiff(diff) {
   return {
     ...diff,
-    changedFields: diff.changedFields.map((entry) => ({ ...entry, field: COLUMN_TO_API[entry.field] || entry.field })),
+    changedFields: diff.changedFields.map((entry) => ({ ...entry, field: MEDICINE_COLUMN_TO_API[entry.field] || entry.field })),
   };
 }
 
-module.exports = { toCreateInput, toAmendChanges, presentVersion, presentDiff };
+module.exports = { toCreateInput, toAmendChanges, presentMedicine, presentVersion, presentDiff };

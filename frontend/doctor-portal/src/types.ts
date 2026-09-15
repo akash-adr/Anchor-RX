@@ -158,3 +158,142 @@ export interface Provenance {
   versions: PrescriptionVersion[];
   diffs: VersionDiff[];
 }
+
+// ── Module 10 — Audit Dashboard (GET /api/audit/…). Every timestamp is epoch milliseconds (UTC). ──────────────
+
+export type AuditScanResult =
+  | 'verified'
+  | 'stale_version'
+  | 'tampered'
+  | 'forged'
+  | 'revoked'
+  | 'provider_identity_issue'
+  | 'unknown_prescription'
+  | 'malformed_qr';
+
+export type AuditTrustDecisionValue = 'Dispense' | 'Review' | 'Block';
+export type AuditRiskBand = 'low' | 'review' | 'high';
+
+export interface AuditTrustDecision {
+  decisionId: number;
+  trustDecision: AuditTrustDecisionValue;
+  primaryReason: string;
+  riskScore: number | null;
+  riskBand: AuditRiskBand | null;
+  evaluatedVersionNumber: number | null;
+  pharmacyId: string;
+  decidedAt: number;
+}
+
+export interface AuditVersionSnapshot {
+  status: VersionStatus;
+  providerId: string;
+  drugName: string;
+  drugClass: string;
+  dosageValue: string;
+  dosageUnit: string;
+  frequency: string;
+  durationDays: number;
+  route: string;
+  integrityRoot: string;
+  ledgerAnchorRef: string | null;
+}
+
+export interface AuditFieldChange {
+  field: string;
+  old: string | number | null;
+  new: string | number | null;
+  unit?: string;
+}
+
+interface AuditEventBase {
+  versionNumber: number;
+  timestamp: number;
+}
+
+export interface VersionCreatedEvent extends AuditEventBase {
+  eventType: 'version_created';
+  detail: AuditVersionSnapshot;
+}
+
+export interface VersionAmendedEvent extends AuditEventBase {
+  eventType: 'version_amended';
+  detail: AuditVersionSnapshot & { fromVersion: number; changedFields: AuditFieldChange[]; amendedBy: string | null; reason: string | null };
+}
+
+export interface VersionRevokedEvent extends AuditEventBase {
+  eventType: 'version_revoked';
+  detail: { fromVersion: number; revoked: true; revokedBy: string | null; revokedReason: string | null };
+}
+
+export interface LedgerAnchoredEvent extends AuditEventBase {
+  eventType: 'ledger_anchored';
+  detail: { ledgerEntryId: string; entryHash: string; previousEntryHash: string | null; integrityRoot: string; anchorType: string; chainPosition: number };
+}
+
+export interface PharmacyScanEvent extends AuditEventBase {
+  eventType: 'pharmacy_scan';
+  detail: { eventId: number; pharmacyId: string; scanResult: AuditScanResult };
+  trustDecision?: AuditTrustDecision;
+}
+
+export type AuditEvent = VersionCreatedEvent | VersionAmendedEvent | VersionRevokedEvent | LedgerAnchoredEvent | PharmacyScanEvent;
+
+export interface AuditTimeline {
+  prescriptionId: string;
+  currentStatus: VersionStatus;
+  timeline: AuditEvent[];
+  unlinkedTrustDecisions: Array<AuditTrustDecision & { verificationEventId: number | null }>;
+}
+
+export interface IntegrityRecheck {
+  fieldVerification: { valid: boolean; tamperedFields: string[]; integrityRootMatch: boolean; unverifiable?: boolean; error?: string };
+  ledgerVerification: { anchored: boolean; integrityRootMatch: boolean; chainIntact: boolean; anchoredAt: number | null };
+  checkedAt: number;
+  version: { prescriptionId: string; versionNumber: number; status: VersionStatus; basis: 'active_version' | 'latest_version_revoked' };
+}
+
+export type AuditStatusFilter = 'active' | 'dispensed' | 'revoked';
+
+export interface AuditSummaryFilters {
+  currentStatus?: AuditStatusFilter;
+  onlyConcerning?: boolean;
+}
+
+export interface AuditSummaryRow {
+  prescriptionId: string;
+  currentStatus: VersionStatus;
+  lastScan: { eventId: number; result: AuditScanResult; versionNumber: number; timestamp: number } | null;
+  lastTrustDecision: {
+    decisionId: number;
+    trustDecision: AuditTrustDecisionValue;
+    primaryReason: string;
+    riskScore: number | null;
+    riskBand: AuditRiskBand | null;
+    versionNumber: number | null;
+    verificationEventId: number | null;
+    decidedAt: number;
+  } | null;
+  latestIntegrityIntact: boolean;
+  integrityCheckedAt: number;
+}
+
+/** GET /api/prescriptions/:id/versions/:n/document — data for the printable PDF (rendered client-side). */
+export interface PrescriptionDocument {
+  prescriptionId: string;
+  versionNumber: number;
+  status: VersionStatus;
+  patient: { name: string; patientId: string; dob: string }; // dob "YYYY-MM-DD"
+  provider: { name: string; licenseNumber: string };
+  drugName: string;
+  dosageValue: string; // exact stored string, e.g. "500.000"
+  dosageUnit: string;
+  frequency: string;
+  durationDays: number;
+  drugClass: string;
+  route: string;
+  integrityRoot: string;
+  ledgerAnchorRef: string | null;
+  issuedAt: string; // ISO UTC — identical to the issuedAt inside the QR
+  qrImage: string; // PNG data URL, regenerated server-side from the stored created_at
+}

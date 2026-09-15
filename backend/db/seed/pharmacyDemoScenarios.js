@@ -4,7 +4,7 @@
  * Rehearsal seed for the Pharmacy Portal demo. RESETS the target database (like `npm run seed`), then
  * builds one persistent, reproducible example of every seeded scan outcome:
  *
- *   RX-DEMO-0001 v2 verified · RX-DEMO-0005 tampered · RX-DEMO-0006 v1 stale_version ·
+ *   RX-DEMO-0001 v2 verified · RX-DEMO-0005 tampered (medicine_1.dosage_value) · RX-DEMO-0006 v1 stale_version ·
  *   RX-DEMO-0007 provider_identity_issue · RX-DEMO-0008 revoked · RX-DEMO-0009 forged
  *
  * Usage: npm run seed:demo   (then: npm run demo:payloads)
@@ -19,7 +19,10 @@ const { createPrescriptionVersionRepository } = require('../repositories/prescri
 const { createAmendmentService } = require('../../versioning/amendmentService');
 const { computeEntryHash } = require('../../ledger/ledgerService');
 
-const BASE = Object.freeze({ dosage_unit: 'mg' });
+/** A one-medicine prescription in the Module 14 input shape (the rehearsal scenarios each have one medicine). */
+function onePrescription(prescriptionId, patientId, providerId, medicine) {
+  return { prescriptionId, patientId, providerId, medicines: [{ dosageUnit: 'mg', ...medicine }] };
+}
 
 async function seedPharmacyDemoScenarios(pool) {
   // Deterministic salts: integrity roots for these IDs are identical on every rehearsal reseed.
@@ -27,21 +30,20 @@ async function seedPharmacyDemoScenarios(pool) {
   const amendmentService = createAmendmentService(pool, { repository });
 
   await seed(pool); // reset + RX-DEMO-0001..0004 (RX-DEMO-0001 v2 = verified example)
-  await runTamperDemo(pool); // RX-DEMO-0005: raw SQL dose edit = tampered example
+  await runTamperDemo(pool); // RX-DEMO-0005: raw SQL edit of medicine_1.dosage_value = tampered example
 
   // stale_version: v1 QR after a legitimate amendment.
-  await repository.createPrescription({
-    ...BASE,
-    prescription_id: 'RX-DEMO-0006',
-    patient_id: 'PAT-002',
-    provider_id: 'PRV-001',
-    drug_name: 'Amlodipine',
-    dosage_value: '5',
-    frequency: 'once daily',
-    duration_days: 30,
-    drug_class: 'calcium channel blocker',
-  });
-  await amendmentService.amendPrescriptionAuthorized('RX-DEMO-0006', { dosage_value: '10' }, 'PRV-001', 'BP above target at 5 mg');
+  const stale = await repository.createPrescription(
+    onePrescription('RX-DEMO-0006', 'PAT-002', 'PRV-001', {
+      drugName: 'Amlodipine', drugClass: 'calcium channel blocker', dosageValue: '5', frequency: 'once daily', durationDays: 30, quantityPrescribed: 30,
+    }),
+  );
+  await amendmentService.amendPrescriptionAuthorized(
+    'RX-DEMO-0006',
+    { medicineId: stale.medicines[0].medicine_id, dosageValue: '10' },
+    'PRV-001',
+    'BP above target at 5 mg',
+  );
 
   // provider_identity_issue: a clean prescription by a dedicated provider who is then flagged.
   // (A dedicated provider so no other demo prescription is affected — the provider check overrides all others.)
@@ -49,45 +51,27 @@ async function seedPharmacyDemoScenarios(pool) {
     "INSERT INTO provider (provider_id, name, license_number, credentials, status) VALUES (?, ?, ?, ?, 'active')",
     [DEMO_PROVIDER_FLAGGED.provider_id, DEMO_PROVIDER_FLAGGED.name, DEMO_PROVIDER_FLAGGED.license_number, DEMO_PROVIDER_FLAGGED.credentials],
   );
-  await repository.createPrescription({
-    ...BASE,
-    prescription_id: 'RX-DEMO-0007',
-    patient_id: 'PAT-003',
-    provider_id: DEMO_PROVIDER_FLAGGED.provider_id,
-    drug_name: 'Azithromycin',
-    dosage_value: '500',
-    frequency: 'once daily',
-    duration_days: 3,
-    drug_class: 'macrolide antibiotic',
-  });
+  await repository.createPrescription(
+    onePrescription('RX-DEMO-0007', 'PAT-003', DEMO_PROVIDER_FLAGGED.provider_id, {
+      drugName: 'Azithromycin', drugClass: 'macrolide antibiotic', dosageValue: '500', frequency: 'once daily', durationDays: 3, quantityPrescribed: 3,
+    }),
+  );
   await pool.execute("UPDATE provider SET status = 'flagged' WHERE provider_id = ?", [DEMO_PROVIDER_FLAGGED.provider_id]);
 
   // revoked.
-  await repository.createPrescription({
-    ...BASE,
-    prescription_id: 'RX-DEMO-0008',
-    patient_id: 'PAT-001',
-    provider_id: 'PRV-001',
-    drug_name: 'Ibuprofen',
-    dosage_value: '400',
-    frequency: 'three times daily',
-    duration_days: 5,
-    drug_class: 'nsaid',
-  });
+  await repository.createPrescription(
+    onePrescription('RX-DEMO-0008', 'PAT-001', 'PRV-001', {
+      drugName: 'Ibuprofen', drugClass: 'nsaid', dosageValue: '400', frequency: 'three times daily', durationDays: 5, quantityPrescribed: 15,
+    }),
+  );
   await amendmentService.revokePrescription('RX-DEMO-0008', 'PRV-001', 'Patient reported NSAID sensitivity');
 
   // forged — MUST be the last ledger write of this script.
-  const forged = await repository.createPrescription({
-    ...BASE,
-    prescription_id: 'RX-DEMO-0009',
-    patient_id: 'PAT-002',
-    provider_id: 'PRV-001',
-    drug_name: 'Cefalexin',
-    dosage_value: '500',
-    frequency: 'four times daily',
-    duration_days: 7,
-    drug_class: 'cephalosporin',
-  });
+  const forged = await repository.createPrescription(
+    onePrescription('RX-DEMO-0009', 'PAT-002', 'PRV-001', {
+      drugName: 'Cefalexin', drugClass: 'cephalosporin', dosageValue: '500', frequency: 'four times daily', durationDays: 7, quantityPrescribed: 28,
+    }),
+  );
   await forgeNewestLedgerEntry(pool, forged);
 
   return repository;

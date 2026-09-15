@@ -8,6 +8,9 @@
 const { RepositoryError } = require('../db/repositories/prescriptionVersionRepository');
 const { AmendmentError } = require('../versioning/amendmentService');
 const { LedgerError } = require('../ledger/ledgerService');
+const { AuditTimelineError } = require('../audit/timeline');
+const { AuditRecheckError } = require('../audit/recheck');
+const { AuditSummaryError } = require('../audit/summary');
 
 class ApiError extends Error {
   constructor(status, code, message) {
@@ -19,6 +22,8 @@ class ApiError extends Error {
 }
 
 const NOT_FOUND_CODES = new Set(['PRESCRIPTION_NOT_FOUND', 'NOT_FOUND', 'VERSION_NOT_FOUND']);
+// Audit codes meaning the stored records themselves are inconsistent — a server-side data problem, reported by name.
+const AUDIT_DATA_INCONSISTENCY_CODES = new Set(['DUPLICATE_TRUST_DECISION', 'PROVENANCE_INCOMPLETE']);
 // Ledger codes that describe a conflict with current state rather than a broken server.
 const LEDGER_CONFLICT_CODES = new Set(['ALREADY_ANCHORED']);
 
@@ -60,6 +65,19 @@ function handleReadError(err, res, next) {
   return next(err);
 }
 
+/** audit reads (Module 10) — unknown prescription 404, bad identifier/filters 400, inconsistent audit data 500 by name. */
+function handleAuditError(err, res, next) {
+  if (err instanceof ApiError) return sendError(res, err.status, err.code, err.message);
+  const known = err instanceof AuditTimelineError || err instanceof AuditRecheckError || err instanceof AuditSummaryError || isDomainError(err);
+  if (!known) return next(err);
+  if (NOT_FOUND_CODES.has(err.code)) return sendError(res, 404, 'PRESCRIPTION_NOT_FOUND', err.message);
+  if (AUDIT_DATA_INCONSISTENCY_CODES.has(err.code)) {
+    console.error('[api] audit data inconsistency:', err);
+    return sendError(res, 500, err.code, 'Audit records for this prescription are internally inconsistent');
+  }
+  return sendError(res, 400, err.code, err.message);
+}
+
 function notFoundHandler(req, res) {
   sendError(res, 404, 'ROUTE_NOT_FOUND', `${req.method} ${req.path} does not exist`);
 }
@@ -74,4 +92,4 @@ function errorMiddleware(err, req, res, next) {
   return sendError(res, 500, 'INTERNAL_ERROR');
 }
 
-module.exports = { ApiError, handleCreateError, handleChangeError, handleReadError, notFoundHandler, errorMiddleware };
+module.exports = { ApiError, handleCreateError, handleChangeError, handleReadError, handleAuditError, notFoundHandler, errorMiddleware };

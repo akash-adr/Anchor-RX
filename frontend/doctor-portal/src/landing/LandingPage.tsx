@@ -12,10 +12,11 @@ import {
   Stethoscope,
   type LucideProps,
 } from 'lucide-react';
-import HeroLogo from './HeroLogo';
+import './landing.css';
 
 const PORTAL_PATH = '/portal';
 const PHARMACY_PATH = '/pharmacy';
+const AUDIT_PATH = '/audit';
 
 function PortalButton({ className = '' }: { className?: string }) {
   return (
@@ -37,6 +38,22 @@ function PharmacyButton({ className = '' }: { className?: string }) {
     >
       <Pill aria-hidden className="h-5 w-5" />
       Pharmacy Login
+    </Link>
+  );
+}
+
+/**
+ * ⚠ Prototype: this link IS the whole "gate" into the Audit Dashboard — a click-through with no auditor identity,
+ * login or access control (even more minimal than the Doctor/Pharmacy mock logins). See audit/AuditLayout.tsx.
+ */
+function AuditButton({ className = '' }: { className?: string }) {
+  return (
+    <Link
+      to={AUDIT_PATH}
+      className={`inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-base font-semibold text-slate-800 shadow-sm transition hover:border-slate-700 hover:bg-slate-100 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-teal-600 ${className}`}
+    >
+      <History aria-hidden className="h-5 w-5" />
+      Enter Audit Dashboard
     </Link>
   );
 }
@@ -96,7 +113,7 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-white text-slate-900">
+    <div className="landing-font min-h-screen bg-white text-slate-900">
       {/* Hero */}
       <header className="relative overflow-hidden bg-gradient-to-b from-white via-teal-50/40 to-sky-50/70 px-4 pb-20 pt-10 sm:px-6 sm:pt-14">
         <div
@@ -104,10 +121,14 @@ export default function LandingPage() {
           className="pointer-events-none absolute inset-x-0 top-0 h-[36rem] bg-[radial-gradient(ellipse_at_50%_35%,rgba(13,148,136,0.07),transparent_65%)]"
         />
         <div className="relative mx-auto flex max-w-5xl flex-col items-center text-center">
-          <h1 className="sr-only">Anchor Rx</h1>
-          <HeroLogo />
-          <p className="max-w-3xl text-balance text-2xl font-semibold leading-snug tracking-tight text-slate-900 sm:text-3xl">
-            Trust what was prescribed. <span className="text-teal-700">Detect what was changed.</span> Flag what deserves review.
+          <h1 data-testid="hero-wordmark" className="landing-wordmark landing-rise-in mt-12 sm:mt-20">
+            Anchor Rx
+          </h1>
+          <p
+            data-testid="hero-tagline"
+            className="landing-rise-in landing-rise-in-delayed mt-5 max-w-2xl text-balance text-lg font-light leading-relaxed text-slate-600 sm:text-2xl"
+          >
+            Trust what was prescribed. Detect what was changed. Flag what deserves review.
           </p>
           <p className="mt-4 max-w-xl text-base text-slate-600">
             A tamper-evident prescription integrity and safety network for doctors and pharmacies.
@@ -115,6 +136,7 @@ export default function LandingPage() {
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <PortalButton />
             <PharmacyButton />
+            <AuditButton />
           </div>
         </div>
       </header>
@@ -230,6 +252,7 @@ export default function LandingPage() {
           <div className="flex flex-wrap items-center justify-center gap-3">
             <PortalButton />
             <PharmacyButton />
+            <AuditButton />
           </div>
         </div>
       </footer>

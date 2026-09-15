@@ -96,6 +96,22 @@ test('patient age uses whole years and respects the birthday boundary', async ()
   expect((await onBirthday.buildScoringPayload('RX-DEMO-0003', 1)).patientAge).toBe(64);
 });
 
+test('multi-medicine prescription: drug fields come from the FIRST medicine (sequence 1) — documented simplification', async () => {
+  const { createPrescriptionVersionRepository } = require('../db/repositories/prescriptionVersionRepository');
+  const v1 = await createPrescriptionVersionRepository(pool).createPrescription({
+    patientId: 'PAT-001',
+    providerId: 'PRV-002',
+    medicines: [
+      { drugName: 'Ibuprofen', drugClass: 'nsaid', dosageValue: '400', dosageUnit: 'mg', frequency: 'every 8 hours', durationDays: 5, quantityPrescribed: 15 },
+      { drugName: 'Amoxicillin', drugClass: 'penicillin antibiotic', dosageValue: '500', dosageUnit: 'mg', frequency: 'three times daily', durationDays: 7, quantityPrescribed: 21 },
+    ],
+  });
+  const payload = await buildScoringPayload(v1.prescription_id, 1);
+  expect(Object.keys(payload)).toEqual(CONTRACT_KEYS); // contract unchanged
+  expect(payload).toMatchObject({ drugName: 'Ibuprofen', drugClass: 'nsaid', doseValue: '400.000', doseUnit: 'mg', frequency: 'every 8 hours', durationDays: 5 });
+  expect(payload.providerDrugClassHistory).toEqual({ statin: 1 }); // PRV-002's other prescription (RX-DEMO-0002), by first medicine
+});
+
 test('unknown prescription versions raise VERSION_NOT_FOUND', async () => {
   await expect(buildScoringPayload('RX-DEMO-0003', 9)).rejects.toMatchObject({ name: 'ScoringPayloadError', code: 'VERSION_NOT_FOUND' });
   await expect(buildScoringPayload('RX-NOPE', 1)).rejects.toBeInstanceOf(ScoringPayloadError);

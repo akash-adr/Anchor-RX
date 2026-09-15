@@ -6,10 +6,15 @@
 import type {
   AmendChanges,
   AmendResult,
+  AuditSummaryFilters,
+  AuditSummaryRow,
+  AuditTimeline,
   CreatedPrescription,
+  IntegrityRecheck,
   NewPrescription,
   Patient,
   Pharmacy,
+  PrescriptionDocument,
   Provenance,
   Provider,
   RevokeResult,
@@ -110,6 +115,11 @@ export function revokePrescription(prescriptionId: string, providerId: string, r
   return request('POST', `${rxPath(prescriptionId)}/revoke`, { providerId, reason });
 }
 
+/** Everything needed to render the printable PDF for one exact version (the QR is the one issued with it). */
+export function getPrescriptionDocument(prescriptionId: string, versionNumber: number): Promise<PrescriptionDocument> {
+  return request('GET', `${rxPath(prescriptionId)}/versions/${versionNumber}/document`);
+}
+
 export function getProvenance(prescriptionId: string): Promise<Provenance> {
   return request('GET', `${rxPath(prescriptionId)}/provenance`);
 }
@@ -129,4 +139,27 @@ export function getPharmacies(): Promise<Pharmacy[]> {
 /** Any scan the server evaluated (including malformed_qr / unknown_prescription) resolves; only a failed request rejects. */
 export function scanPrescription(qrPayloadRaw: string, pharmacyId: string): Promise<ScanResult> {
   return request('POST', '/api/scan', { qrPayloadRaw, pharmacyId });
+}
+
+// ── Module 10 — Audit Dashboard. ⚠ Prototype: these endpoints have no access control (backend/api/routes/audit.js). ──
+
+const auditRxPath = (prescriptionId: string) => `/api/audit/prescriptions/${encodeURIComponent(prescriptionId)}`;
+
+/** Summary list. Integrity is rechecked live server-side for every row; scan / decision columns are history. */
+export function getAuditSummary(filters: AuditSummaryFilters = {}): Promise<AuditSummaryRow[]> {
+  const params = new URLSearchParams();
+  if (filters.currentStatus) params.set('currentStatus', filters.currentStatus);
+  if (filters.onlyConcerning) params.set('onlyConcerning', 'true');
+  const query = params.toString();
+  return request('GET', `/api/audit/summary${query ? `?${query}` : ''}`);
+}
+
+/** HISTORY: the recorded, merged audit trail for one prescription (oldest first). */
+export function getAuditTimeline(prescriptionId: string): Promise<AuditTimeline> {
+  return request('GET', `${auditRxPath(prescriptionId)}/timeline`);
+}
+
+/** LIVE: recomputes integrity from the data as stored right now. Writes nothing. */
+export function recheckIntegrity(prescriptionId: string): Promise<IntegrityRecheck> {
+  return request('GET', `${auditRxPath(prescriptionId)}/recheck`);
 }

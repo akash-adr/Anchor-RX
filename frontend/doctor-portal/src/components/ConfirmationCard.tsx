@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { CreatedPrescription } from '../types';
+import DownloadPrescriptionButton from './DownloadPrescriptionButton';
 import QrCodeCard from './QrCodeCard';
 
 function truncateHash(hash: string) {
@@ -84,7 +85,10 @@ export default function ConfirmationCard({
           </div>
         </dl>
 
-        <QrCodeCard qrImage={result.qrImage} qrPayload={result.qrPayload} caption="Give to the patient — scanned at the pharmacy." />
+        <div className="flex flex-col items-center gap-3">
+          <QrCodeCard qrImage={result.qrImage} qrPayload={result.qrPayload} caption="Give to the patient — scanned at the pharmacy." />
+          <DownloadPrescriptionButton prescriptionId={result.prescriptionId} versionNumber={result.versionNumber} />
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3 border-t border-slate-100 px-6 py-4">

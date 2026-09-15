@@ -12,6 +12,7 @@ import { ApiError, amendPrescription, getProvenance } from '../api';
 import { useCurrentProvider } from '../context/ProviderContext';
 import type { AmendChanges, AmendResult, PrescriptionVersion, Provenance, RevokeResult, VersionStatus } from '../types';
 import ChangeSummary from './ChangeSummary';
+import DownloadPrescriptionButton from './DownloadPrescriptionButton';
 import RevokeDialog from './RevokeDialog';
 import ErrorNotice, { isServerDecision, toApiError } from './ErrorNotice';
 import { DosageUnitInput, Field, LockedInput, TextInput, inputClass } from './formControls';
@@ -222,6 +223,14 @@ export default function AmendPrescription({
               </span>
             </div>
           </div>
+
+          {/* A revoked record is not a prescription to hand out, so there is nothing to download for it. */}
+          {latest.status !== 'revoked' && (
+            <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-6 py-3">
+              <DownloadPrescriptionButton prescriptionId={latest.prescriptionId} versionNumber={latest.versionNumber} />
+              <p className="text-xs text-slate-500">One-page PDF of the current version (v{latest.versionNumber}) with its QR code.</p>
+            </div>
+          )}
 
           {lockedStatus && (
             <div role="note" className="mx-6 mt-5 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">

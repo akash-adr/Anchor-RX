@@ -64,7 +64,7 @@ function createScoringPayloadBuilder(
 ) {
   /**
    * @returns {Promise<object>} ScoringPayload v1 (see table above)
-   * @throws {ScoringPayloadError} VERSION_NOT_FOUND | PATIENT_NOT_FOUND
+   * @throws {ScoringPayloadError} VERSION_NOT_FOUND | PATIENT_NOT_FOUND | NO_MEDICINES
    */
   async function buildScoringPayload(prescriptionId, versionNumber) {
     const version = await repository.getVersion(prescriptionId, versionNumber);
@@ -76,9 +76,19 @@ function createScoringPayloadBuilder(
       throw new ScoringPayloadError('PATIENT_NOT_FOUND', `Patient ${version.patient_id} does not exist`);
     }
 
+    // ⚠ DELIBERATE, DOCUMENTED SIMPLIFICATION (Module 14 retrofit): a prescription can now contain several medicines,
+    // but the risk model scores ONE medicine per payload. The drug fields below come from the FIRST medicine only
+    // (sequence_number = 1, i.e. first in submission order), and mlFeatureRepository uses that same medicine's drug
+    // class. True multi-medicine risk scoring — scoring each medicine independently, or a combined signal across all
+    // of them — is a KNOWN GAP that this retrofit does not solve and must be revisited: medicines 2..N are not scored.
+    const primaryMedicine = version.medicines.find((medicine) => medicine.sequence_number === 1);
+    if (!primaryMedicine) {
+      throw new ScoringPayloadError('NO_MEDICINES', `${prescriptionId} v${versionNumber} has no medicine with sequence_number 1`);
+    }
+
     const referenceTime = version.created_at;
     const [overlappingPrescriptionIds, providerDrugClassHistory, patientVelocity] = await Promise.all([
-      featureRepository.findActiveSameClassPrescriptions(version.patient_id, version.drug_class, prescriptionId),
+      featureRepository.findActiveSameClassPrescriptions(version.patient_id, primaryMedicine.drug_class, prescriptionId),
       featureRepository.getProviderDrugClassHistory(version.provider_id, prescriptionId),
       featureRepository.countRecentPatientPrescriptions(version.patient_id, referenceTime, prescriptionId, VELOCITY_WINDOW_DAYS),
     ]);
@@ -92,12 +102,12 @@ function createScoringPayloadBuilder(
       patientId: version.patient_id,
       providerId: version.provider_id,
       referenceTime: new Date(referenceTime).toISOString(),
-      drugName: version.drug_name,
-      drugClass: version.drug_class,
-      doseValue: version.dosage_value, // exact DECIMAL string — parsed only inside the Python feature extractor
-      doseUnit: version.dosage_unit,
-      frequency: version.frequency,
-      durationDays: version.duration_days,
+      drugName: primaryMedicine.drug_name, // first medicine only — see the simplification note above
+      drugClass: primaryMedicine.drug_class,
+      doseValue: primaryMedicine.dosage_value, // exact DECIMAL string — parsed only inside the Python feature extractor
+      doseUnit: primaryMedicine.dosage_unit,
+      frequency: primaryMedicine.frequency,
+      durationDays: primaryMedicine.duration_days,
       route: version.route,
       patientAge: wholeYearsBetween(patient.dob, now()),
       patientWeight: weightKnown ? Number(patient.weight) : DEFAULT_PATIENT_WEIGHT_KG,

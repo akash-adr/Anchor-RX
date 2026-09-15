@@ -5,6 +5,9 @@
  * Every prescription is a LEGITIMATE chain created through the repository —
  * tamper simulation belongs to Module 2.
  *
+ * Module 14 note: converted to the multi-medicine shape with the SAME scenarios as before (one medicine each,
+ * quantities added, vitals not recorded). New multi-medicine demo data belongs to the seed step of Module 14.
+ *
  * Usage: npm run seed
  */
 
@@ -41,55 +44,43 @@ async function seed(pool) {
   await resetDatabase(pool);
   await insertReferenceData(pool, REFERENCE_DATA);
 
-  // 1. RX-DEMO-0001 — clean prescription with one legitimate amendment (duration 5 → 7 days).
-  await repo.createPrescription({
-    prescription_id: 'RX-DEMO-0001',
-    patient_id: 'PAT-001',
-    provider_id: 'PRV-001',
-    drug_name: 'Amoxicillin',
-    dosage_value: '500',
-    dosage_unit: 'mg',
-    frequency: 'three times daily',
-    duration_days: 5,
-    drug_class: 'penicillin antibiotic',
+  // 1. RX-DEMO-0001 — clean prescription with one legitimate amendment (duration 5 → 7 days, quantity 15 → 21).
+  const rx1 = await repo.createPrescription({
+    prescriptionId: 'RX-DEMO-0001',
+    patientId: 'PAT-001',
+    providerId: 'PRV-001',
+    medicines: [
+      { drugName: 'Amoxicillin', drugClass: 'penicillin antibiotic', dosageValue: '500', dosageUnit: 'mg', frequency: 'three times daily', durationDays: 5, quantityPrescribed: 15 },
+    ],
   });
-  await repo.amendPrescription('RX-DEMO-0001', { duration_days: 7 });
+  await repo.amendPrescription('RX-DEMO-0001', { medicineId: rx1.medicines[0].medicine_id, durationDays: 7, quantityPrescribed: 21 });
 
   // 2. Duplicate therapeutic class for PAT-002: two active statins (Module 8 anomaly input).
   await repo.createPrescription({
-    prescription_id: 'RX-DEMO-0002',
-    patient_id: 'PAT-002',
-    provider_id: 'PRV-002',
-    drug_name: 'Atorvastatin',
-    dosage_value: '20',
-    dosage_unit: 'mg',
-    frequency: 'once daily',
-    duration_days: 30,
-    drug_class: 'statin',
+    prescriptionId: 'RX-DEMO-0002',
+    patientId: 'PAT-002',
+    providerId: 'PRV-002',
+    medicines: [
+      { drugName: 'Atorvastatin', drugClass: 'statin', dosageValue: '20', dosageUnit: 'mg', frequency: 'once daily', durationDays: 30, quantityPrescribed: 30 },
+    ],
   });
   await repo.createPrescription({
-    prescription_id: 'RX-DEMO-0003',
-    patient_id: 'PAT-002',
-    provider_id: 'PRV-001',
-    drug_name: 'Rosuvastatin',
-    dosage_value: '10',
-    dosage_unit: 'mg',
-    frequency: 'once daily',
-    duration_days: 30,
-    drug_class: 'statin',
+    prescriptionId: 'RX-DEMO-0003',
+    patientId: 'PAT-002',
+    providerId: 'PRV-001',
+    medicines: [
+      { drugName: 'Rosuvastatin', drugClass: 'statin', dosageValue: '10', dosageUnit: 'mg', frequency: 'once daily', durationDays: 30, quantityPrescribed: 30 },
+    ],
   });
 
   // 3. RX-DEMO-0004 — ordinary single-version prescription.
   await repo.createPrescription({
-    prescription_id: 'RX-DEMO-0004',
-    patient_id: 'PAT-003',
-    provider_id: 'PRV-001',
-    drug_name: 'Metformin',
-    dosage_value: '500',
-    dosage_unit: 'mg',
-    frequency: 'twice daily',
-    duration_days: 30,
-    drug_class: 'biguanide',
+    prescriptionId: 'RX-DEMO-0004',
+    patientId: 'PAT-003',
+    providerId: 'PRV-001',
+    medicines: [
+      { drugName: 'Metformin', drugClass: 'biguanide', dosageValue: '500', dosageUnit: 'mg', frequency: 'twice daily', durationDays: 30, quantityPrescribed: 60 },
+    ],
   });
 
   return repo;
@@ -105,20 +96,20 @@ async function main() {
     for (const id of ['RX-DEMO-0001', 'RX-DEMO-0002', 'RX-DEMO-0003', 'RX-DEMO-0004']) {
       const chain = await repo.getPrescriptionChain(id);
       for (const v of chain) {
-        console.log(
-          `${v.prescription_id} v${v.version_number} [${v.status.padEnd(7)}] ` +
-            `${v.patient_id} ${v.drug_name} ${v.dosage_value} ${v.dosage_unit}, ${v.frequency}, ` +
-            `${v.duration_days}d (${v.drug_class}) parent=${v.parent_version_id ?? '-'}`,
-        );
+        const medicines = v.medicines
+          .map((m) => `#${m.sequence_number} ${m.drug_name} ${m.dosage_value} ${m.dosage_unit}, ${m.frequency}, ${m.duration_days}d ×${m.quantity_prescribed} (${m.drug_class})`)
+          .join(' | ');
+        console.log(`${v.prescription_id} v${v.version_number} [${v.status.padEnd(7)}] ${v.patient_id} ${medicines} parent=${v.parent_version_id ?? '-'}`);
       }
     }
 
     const [dupes] = await pool.query(
-      `SELECT patient_id, drug_class, COUNT(*) AS active_count
-         FROM prescription_version
-        WHERE status = 'active'
-        GROUP BY patient_id, drug_class
-       HAVING COUNT(*) > 1`,
+      `SELECT pv.patient_id, pm.drug_class, COUNT(DISTINCT pv.prescription_id) AS active_count
+         FROM prescription_version pv
+         JOIN prescription_medicine pm ON pm.prescription_version_id = pv.id
+        WHERE pv.status = 'active'
+        GROUP BY pv.patient_id, pm.drug_class
+       HAVING COUNT(DISTINCT pv.prescription_id) > 1`,
     );
     console.log('\nActive duplicate drug classes:', dupes.map((d) => `${d.patient_id}/${d.drug_class} x${d.active_count}`).join(', '));
   } finally {

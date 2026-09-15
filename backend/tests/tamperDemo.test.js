@@ -33,18 +33,20 @@ beforeEach(async () => {
 });
 
 describe('tamper simulation (scenario B)', () => {
-  test('raw SQL dosage edit is detected and pinpointed to dosage_value', async () => {
+  test('raw SQL dosage edit is detected and pinpointed to medicine_1.dosage_value', async () => {
     const { prescriptionId, versionId, before } = await runTamperDemo(pool);
     expect(prescriptionId).toBe(TAMPER_PRESCRIPTION_ID);
 
     const row = await repo.getVersionById(versionId);
 
-    // The edit really happened, and only on dosage_value.
-    expect(before.dosage_value).toBe('500.000');
-    expect(row.dosage_value).toBe('5000.000');
-    for (const field of ['patient_id', 'provider_id', 'drug_name', 'dosage_unit', 'frequency', 'duration_days',
-      'drug_class', 'status', 'version_number', 'salt', 'field_hashes', 'integrity_root']) {
+    // The edit really happened, and only on the first medicine's dosage_value.
+    expect(before.medicines[0].dosage_value).toBe('500.000');
+    expect(row.medicines[0].dosage_value).toBe('5000.000');
+    for (const field of ['patient_id', 'provider_id', 'height_cm', 'weight_kg', 'status', 'version_number', 'salt', 'field_hashes', 'integrity_root']) {
       expect({ field, value: row[field] }).toEqual({ field, value: before[field] });
+    }
+    for (const column of ['medicine_id', 'sequence_number', 'drug_name', 'drug_class', 'dosage_unit', 'frequency', 'duration_days', 'quantity_prescribed']) {
+      expect({ column, value: row.medicines[0][column] }).toEqual({ column, value: before.medicines[0][column] });
     }
 
     const result = verifyIntegrity(row, row.field_hashes, row.salt);
@@ -52,7 +54,7 @@ describe('tamper simulation (scenario B)', () => {
 
     expect(result).toEqual({
       valid: false,
-      tamperedFields: ['dosage_value'],
+      tamperedFields: ['medicine_1.dosage_value'],
       integrityRootMatch: false,
     });
   });

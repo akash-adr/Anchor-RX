@@ -30,27 +30,19 @@ All HTTP calls live in [`src/api.ts`](src/api.ts); components never call `fetch`
 | Pharmacy scan | Camera decode or **Verify payload** | `POST /api/scan` (+ `GET /api/prescriptions/:id/provenance` and `GET /api/patients` for card details) | `pharmacy/PharmacyScanScreen.tsx` |
 | History | **Show history** | `GET /api/prescriptions/:id/provenance`, plus `GET /api/providers` for display names | `HistoryView.tsx` |
 
-## Landing page logo video
+## Landing page hero
 
-`public/` holds two encodings of the same transparent 6-second logo loop; `<video>` lists both and each browser plays
-the first it supports:
+The hero is typeset text — no video. The **Anchor Rx** wordmark is Space Grotesk 700 with a teal → dark-navy gradient
+(`background-clip: text`), falling back to solid deep teal-navy (`#0f4c5c`) in browsers without `background-clip: text`
+support. The tagline is Inter Light. Both fade in with a small upward slide (wordmark first, tagline 100 ms later);
+the animation is disabled under `prefers-reduced-motion`. Styles live in `src/landing/landing.css`; fonts are loaded
+from Google Fonts in `index.html`.
 
-| File | Codec | Played by |
-|---|---|---|
-| `anchor-rx-logo-alpha.mov` | HEVC with alpha (`hvc1`), declared `video/quicktime; codecs="hvc1"` | Safari (macOS, iOS) |
-| `anchor-rx-logo-transparent.webm` | VP9 with alpha | Chrome, Edge, Firefox |
+**Scope:** Space Grotesk and Inter are used by the landing page only. The Doctor, Pharmacy and Audit portals keep the
+system UI font stack (`--font-sans` in `src/index.css`), unchanged.
 
-Regenerate the `.mov` (macOS) — note `-c:v libvpx-vp9` BEFORE `-i`: ffmpeg's built-in VP9 decoder silently drops the
-alpha channel, which would produce an opaque `.mov`:
-
-```bash
-ffmpeg -c:v libvpx-vp9 -i anchor-rx-logo-transparent.webm -c:v hevc_videotoolbox -alpha_quality 0.9 -tag:v hvc1 -an anchor-rx-logo-alpha.mov
-```
-
-**Deploying:** the host must serve `.mov` as `video/quicktime` and `.webm` as `video/webm` (and support HTTP range
-requests). Some static hosts send unfamiliar extensions as `application/octet-stream`, which silently breaks Safari
-(it shows the static poster) while everything still works on localhost. Check with
-`curl -I https://<host>/anchor-rx-logo-alpha.mov`. The poster is shown only for "reduce motion" or when no source plays.
+The former animated logo files (`anchor-rx-logo-transparent.webm`, `anchor-rx-logo-alpha.mov`,
+`anchor-rx-logo-poster.png`) are still in `public/` but are no longer referenced.
 
 ## QR codes
 
@@ -153,3 +145,20 @@ Failure reasons produced by the client itself (`src/api.ts`):
 | `HTTP_<status>` | Non-2xx response without an Anchor Rx error body |
 | `INVALID_RESPONSE` | 2xx response whose body is not readable JSON |
 | `RENDER_ERROR` | A screen threw while rendering (`ErrorBoundary.tsx`), instead of a blank page |
+
+## Audit Dashboard (Module 10)
+
+Open it from the landing page with **Enter Audit Dashboard**.
+
+> ⚠ **Prototype: zero access control.** The landing link is the entire "gate": there is no auditor identity, login or session, and the `/api/audit/*` endpoints have no auth. It is even more minimal than the Doctor/Pharmacy mock logins.
+
+| Route | Screen | API |
+|---|---|---|
+| `/audit` | Summary list — the auditor's starting point. Rows whose **live** integrity recheck fails are flagged red; scan and trust-decision columns are history. | `GET /api/audit/summary?currentStatus=&onlyConcerning=` |
+| `/audit/prescriptions/:id` | **Current Integrity Status** card (top) with *Recheck now*, then the **History** timeline. | `GET …/recheck` (on demand), `GET …/timeline` |
+
+Screen rules:
+- The live recheck card and the History timeline are separate components with separate requests and state. Never merge a recheck result into the timeline — history says what was recorded *then*, the card says what is true *now*.
+- A pharmacy scan's trust decision is nested inside its scan card (linked by `verification_event_id`), not shown as its own entry.
+- Times show milliseconds (audit events can be milliseconds apart); hover for the exact UTC value.
+- Scan-result chips reuse the pharmacy severity colours above.

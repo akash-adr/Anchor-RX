@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Module 3 — authorized amendments, revocation, version diffs and provenance.
+ * Module 3 — authorized amendments, revocation, version diffs and provenance (medicine-scoped since Module 14).
  *
  * amendPrescriptionAuthorized and revokePrescription are the ONLY application paths that reach
  * the repository's write functions (and therefore Module 2's hashing). Every attempt is logged,
@@ -11,15 +11,25 @@
 const { createPrescriptionVersionRepository } = require('../db/repositories/prescriptionVersionRepository');
 const { createAuthorization } = require('./authorization');
 
-const AMENDABLE_FIELDS = Object.freeze(['dosage_value', 'dosage_unit', 'frequency', 'duration_days']);
+// Module 14: an amendment changes ONE medicine of the current version, identified by its medicineId, and only these
+// fields of it. Every other medicine is copied forward unchanged by the repository.
+const AMENDABLE_FIELDS = Object.freeze(['dosageValue', 'dosageUnit', 'frequency', 'durationDays', 'quantityPrescribed']);
 
-// Fields that define WHAT is prescribed and FOR/BY WHOM — changing them is a new prescription.
-const IDENTITY_FIELDS = Object.freeze(['patient_id', 'drug_name', 'drug_class', 'provider_id']);
+// The same fields as stored columns (used for display diffs).
+const AMENDABLE_MEDICINE_COLUMNS = Object.freeze(['dosage_value', 'dosage_unit', 'frequency', 'duration_days', 'quantity_prescribed']);
+
+// Fields that define WHAT is prescribed, FOR/BY WHOM, and the vitals recorded with it — changing them is a new prescription.
+const IDENTITY_FIELDS = Object.freeze(['patientId', 'providerId', 'drugName', 'drugClass', 'heightCm', 'weightKg']);
+
+// Keys that try to change WHICH medicines the prescription contains.
+const MEDICINE_SET_CHANGE_KEY = /^(medicines|(add|remove|delete|insert|new)Medicines?(Ids?)?)$/i;
 
 const AMENDMENT_REJECTIONS = Object.freeze({
   INVALID_AMENDMENT_FIELD: 'INVALID_AMENDMENT_FIELD',
   NO_CHANGES: 'NO_CHANGES',
   REASON_REQUIRED: 'REASON_REQUIRED',
+  MEDICINE_ID_REQUIRED: 'MEDICINE_ID_REQUIRED',
+  MEDICINE_SET_CHANGE_NOT_ALLOWED: 'MEDICINE_SET_CHANGE_NOT_ALLOWED',
 });
 
 // amendment_attempts has no action column; revocation log reasons carry this prefix.
@@ -49,7 +59,7 @@ function invalidFieldMessage(disallowed) {
   if (unknown.length > 0) {
     parts.push(`unknown amendment field(s): ${unknown.join(', ')}`);
   }
-  return `${parts.join('; ')} (amendable: ${AMENDABLE_FIELDS.join(', ')})`;
+  return `${parts.join('; ')} (amendable, on one medicine: ${AMENDABLE_FIELDS.join(', ')})`;
 }
 
 /**
@@ -72,16 +82,22 @@ function diffRows(prescriptionId, fromRow, toRow) {
     };
   }
 
+  // Medicines are matched by sequence_number (their identity across versions; medicine_id differs per version).
   const changedFields = [];
-  for (const field of AMENDABLE_FIELDS) {
-    // Exact comparison of stored values (dosage_value stays a DECIMAL string — never parsed).
-    if (fromRow[field] === toRow[field]) continue;
-    const entry = { field, old: fromRow[field], new: toRow[field] };
-    if (field === 'dosage_value') {
-      entry.unit = toRow.dosage_unit;
-      if (fromRow.dosage_unit !== toRow.dosage_unit) entry.oldUnit = fromRow.dosage_unit;
+  const fromBySequence = new Map((fromRow.medicines || []).map((medicine) => [medicine.sequence_number, medicine]));
+  for (const toMedicine of toRow.medicines || []) {
+    const fromMedicine = fromBySequence.get(toMedicine.sequence_number);
+    if (!fromMedicine) continue; // the medicine set is fixed across amendments; nothing to compare
+    for (const field of AMENDABLE_MEDICINE_COLUMNS) {
+      // Exact comparison of stored values (dosage_value stays a DECIMAL string — never parsed).
+      if (fromMedicine[field] === toMedicine[field]) continue;
+      const entry = { medicine: toMedicine.sequence_number, drugName: toMedicine.drug_name, field, old: fromMedicine[field], new: toMedicine[field] };
+      if (field === 'dosage_value') {
+        entry.unit = toMedicine.dosage_unit;
+        if (fromMedicine.dosage_unit !== toMedicine.dosage_unit) entry.oldUnit = fromMedicine.dosage_unit;
+      }
+      changedFields.push(entry);
     }
-    changedFields.push(entry);
   }
 
   return {
@@ -132,21 +148,41 @@ function createAmendmentService(
   }
 
   /**
-   * @returns {Promise<object>} the newly created prescription_version row
-   * @throws {AmendmentError} code = INVALID_AMENDMENT_FIELD | NO_CHANGES | PRESCRIPTION_NOT_FOUND |
-   *         NOT_AMENDABLE_STATUS | NOT_AUTHORIZED_PROVIDER (repository errors pass through after logging)
+   * @param {object} changes { medicineId, dosageValue?, dosageUnit?, frequency?, durationDays?, quantityPrescribed? }
+   *        — exactly ONE medicine per call, identified by its medicine_id in the CURRENT version.
+   * @returns {Promise<object>} the newly created prescription_version row (with its medicines)
+   * @throws {AmendmentError} code = MEDICINE_SET_CHANGE_NOT_ALLOWED | INVALID_AMENDMENT_FIELD | MEDICINE_ID_REQUIRED |
+   *         NO_CHANGES | PRESCRIPTION_NOT_FOUND | NOT_AMENDABLE_STATUS | NOT_AUTHORIZED_PROVIDER
+   *         (repository errors, e.g. MEDICINE_NOT_IN_CURRENT_VERSION, pass through after logging)
    */
   async function amendPrescriptionAuthorized(prescriptionId, changes, requestingProviderId, reason) {
     // Shape of the request — rejected before authorization is even consulted.
     if (changes === null || typeof changes !== 'object' || Array.isArray(changes)) {
-      return reject(prescriptionId, requestingProviderId, AMENDMENT_REJECTIONS.NO_CHANGES, 'changes must be an object of amendable fields');
+      return reject(prescriptionId, requestingProviderId, AMENDMENT_REJECTIONS.NO_CHANGES, 'changes must be an object: { medicineId, ...amendable fields }');
     }
-    const disallowed = Object.keys(changes).filter((key) => !AMENDABLE_FIELDS.includes(key));
+    const setChanges = Object.keys(changes).filter((key) => MEDICINE_SET_CHANGE_KEY.test(key));
+    if (setChanges.length > 0) {
+      return reject(
+        prescriptionId,
+        requestingProviderId,
+        AMENDMENT_REJECTIONS.MEDICINE_SET_CHANGE_NOT_ALLOWED,
+        `Adding or removing a medicine requires a new prescription, not an amendment (got: ${setChanges.join(', ')})`,
+      );
+    }
+    const disallowed = Object.keys(changes).filter((key) => key !== 'medicineId' && !AMENDABLE_FIELDS.includes(key));
     if (disallowed.length > 0) {
       return reject(prescriptionId, requestingProviderId, AMENDMENT_REJECTIONS.INVALID_AMENDMENT_FIELD, invalidFieldMessage(disallowed));
     }
-    if (Object.values(changes).every((value) => value === undefined)) {
-      return reject(prescriptionId, requestingProviderId, AMENDMENT_REJECTIONS.NO_CHANGES, 'Amendment must change at least one field');
+    if (!Number.isSafeInteger(changes.medicineId) || changes.medicineId < 1) {
+      return reject(
+        prescriptionId,
+        requestingProviderId,
+        AMENDMENT_REJECTIONS.MEDICINE_ID_REQUIRED,
+        'medicineId is required: an amendment changes exactly one medicine of the current version',
+      );
+    }
+    if (AMENDABLE_FIELDS.every((field) => changes[field] === undefined)) {
+      return reject(prescriptionId, requestingProviderId, AMENDMENT_REJECTIONS.NO_CHANGES, 'Amendment must change at least one field of the medicine');
     }
 
     // A rejected attempt never reaches the repository or the hash engine.
@@ -229,5 +265,6 @@ module.exports = {
   AmendmentError,
   AMENDMENT_REJECTIONS,
   AMENDABLE_FIELDS,
+  IDENTITY_FIELDS,
   REVOCATION_LOG_PREFIX,
 };

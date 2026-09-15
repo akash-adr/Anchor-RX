@@ -68,15 +68,13 @@ afterEach(() => {
 // helpers
 // ---------------------------------------------------------------------------
 
+// Module 14 input shape: one medicine.
 const BASE_RX = Object.freeze({
-  patient_id: 'PAT-001',
-  provider_id: 'PRV-001',
-  drug_name: 'Paracetamol',
-  dosage_value: '500',
-  dosage_unit: 'mg',
-  frequency: 'every 6 hours',
-  duration_days: 3,
-  drug_class: 'analgesic',
+  patientId: 'PAT-001',
+  providerId: 'PRV-001',
+  medicines: Object.freeze([
+    Object.freeze({ drugName: 'Paracetamol', drugClass: 'analgesic', dosageValue: '500', dosageUnit: 'mg', frequency: 'every 6 hours', durationDays: 3, quantityPrescribed: 12 }),
+  ]),
 });
 
 async function eventCount() {
@@ -134,12 +132,14 @@ const RESULT_KEYS = [
   'versionNumber',
 ].sort();
 
-async function createClean(overrides = {}) {
-  return repository.createPrescription({ ...BASE_RX, ...overrides });
+async function createClean(overrides = {}, medicineOverrides = {}) {
+  return repository.createPrescription({ ...BASE_RX, ...overrides, medicines: [{ ...BASE_RX.medicines[0], ...medicineOverrides }] });
 }
 
 async function rawTamperDosage(versionRow, newDosage = '5000') {
-  await pool.execute('UPDATE prescription_version SET dosage_value = ? WHERE id = ?', [newDosage, versionRow.id]);
+  // Module 2 demo pattern on the Module 14 schema: edit the first medicine's row directly, bypassing the repository.
+  const [res] = await pool.execute('UPDATE prescription_medicine SET dosage_value = ? WHERE medicine_id = ?', [newDosage, versionRow.medicines[0].medicine_id]);
+  expect(res.affectedRows).toBe(1);
 }
 
 async function mutateLedgerEntry(versionRow) {
@@ -218,7 +218,7 @@ describe('pharmacy scan precedence chain', () => {
   });
 
   test('4. provider_identity_issue — flagged provider on an OTHERWISE clean, anchored, current version', async () => {
-    const v1 = await createClean({ provider_id: 'PRV-002' });
+    const v1 = await createClean({ providerId: 'PRV-002' });
 
     // Prove every later check WOULD pass for this version before flagging the provider.
     expect(hashEngine.verifyIntegrity(v1, v1.field_hashes, v1.salt).valid).toBe(true);
@@ -237,21 +237,21 @@ describe('pharmacy scan precedence chain', () => {
     });
   });
 
-  test('5. tampered — raw SQL dosage edit (Module 2 demo pattern) pinpoints exactly ["dosage_value"]', async () => {
+  test('5. tampered — raw SQL dosage edit (Module 2 demo pattern) pinpoints exactly ["medicine_1.dosage_value"]', async () => {
     const { prescriptionId, versionId } = await runTamperDemo(pool); // RX-DEMO-0005: 500 → 5000, repository bypassed
 
     const { result } = await scanExpectingOneEvent(await qrTextFor(prescriptionId, 1), { expectedVersionRowId: versionId });
 
     expect(result.scanResult).toBe('tampered');
     expect(result.fieldVerification.valid).toBe(false);
-    expect(result.fieldVerification.tamperedFields).toEqual(['dosage_value']);
+    expect(result.fieldVerification.tamperedFields).toEqual(['medicine_1.dosage_value']);
     expect(result.ledgerVerification).toBeNull(); // (e) never ran
     expect(result.providerStatus).toBe('active');
   });
 
   test('6. forged — raw SQL mutation of the ledger entry (Module 4 pattern), distinct from tampered', async () => {
-    const forgedTarget = await createClean({ drug_name: 'Amoxicillin', drug_class: 'penicillin antibiotic' });
-    const tamperedTarget = await createClean({ patient_id: 'PAT-002' });
+    const forgedTarget = await createClean({}, { drugName: 'Amoxicillin', drugClass: 'penicillin antibiotic' });
+    const tamperedTarget = await createClean({ patientId: 'PAT-002' });
 
     await mutateLedgerEntry(forgedTarget); // ledger bypassed, prescription row untouched
     const forged = (await scanExpectingOneEvent(await qrTextFor(forgedTarget.prescription_id, 1), { expectedVersionRowId: forgedTarget.id })).result;
@@ -287,7 +287,7 @@ describe('pharmacy scan precedence chain', () => {
   test('8. stale_version — scanning the ORIGINAL v1 QR after a legitimate amendment', async () => {
     const v1 = await createClean();
     const v1Qr = await qrTextFor(v1.prescription_id, 1); // printed before the amendment
-    await amendmentService.amendPrescriptionAuthorized(v1.prescription_id, { dosage_value: '650' }, 'PRV-001', 'Pain not controlled');
+    await amendmentService.amendPrescriptionAuthorized(v1.prescription_id, { medicineId: v1.medicines[0].medicine_id, dosageValue: '650' }, 'PRV-001', 'Pain not controlled');
 
     const { result } = await scanExpectingOneEvent(v1Qr, { expectedVersionRowId: v1.id });
 
@@ -312,14 +312,14 @@ describe('9. verification_event audit trail', () => {
     // Fixtures (everything that writes to the ledger happens BEFORE the ledger mutation, and the forged
     // target is the newest ledger entry, so earlier entries' chains stay intact).
     const verifiedRx = await createClean();
-    const flaggedRx = await createClean({ provider_id: 'PRV-002' });
+    const flaggedRx = await createClean({ providerId: 'PRV-002' });
     const { prescriptionId: tamperedRxId, versionId: tamperedRowId } = await runTamperDemo(pool);
-    const revokedRx = await createClean({ patient_id: 'PAT-003' });
+    const revokedRx = await createClean({ patientId: 'PAT-003' });
     await amendmentService.revokePrescription(revokedRx.prescription_id, 'PRV-001', 'Therapy changed');
-    const staleRx = await createClean({ patient_id: 'PAT-002' });
+    const staleRx = await createClean({ patientId: 'PAT-002' });
     const staleV1Qr = await qrTextFor(staleRx.prescription_id, 1);
-    await amendmentService.amendPrescriptionAuthorized(staleRx.prescription_id, { duration_days: 5 }, 'PRV-001');
-    const forgedRx = await createClean({ drug_name: 'Cefalexin', drug_class: 'cephalosporin' });
+    await amendmentService.amendPrescriptionAuthorized(staleRx.prescription_id, { medicineId: staleRx.medicines[0].medicine_id, durationDays: 5 }, 'PRV-001');
+    const forgedRx = await createClean({}, { drugName: 'Cefalexin', drugClass: 'cephalosporin' });
     await mutateLedgerEntry(forgedRx);
 
     const scenarios = [
@@ -353,9 +353,9 @@ describe('9. verification_event audit trail', () => {
 
 describe('10. precedence: provider_identity_issue beats tampered', () => {
   test('a version that is BOTH tampered AND by a flagged provider returns provider_identity_issue', async () => {
-    const v1 = await createClean({ provider_id: 'PRV-002' });
+    const v1 = await createClean({ providerId: 'PRV-002' });
     await rawTamperDosage(v1); // genuinely tampered…
-    expect(hashEngine.verifyIntegrity(await repository.getVersion(v1.prescription_id, 1), v1.field_hashes, v1.salt).tamperedFields).toEqual(['dosage_value']);
+    expect(hashEngine.verifyIntegrity(await repository.getVersion(v1.prescription_id, 1), v1.field_hashes, v1.salt).tamperedFields).toEqual(['medicine_1.dosage_value']);
     await setProviderStatus('PRV-002', 'flagged'); // …and the provider is flagged
 
     const verifyIntegritySpy = jest.spyOn(hashEngine, 'verifyIntegrity');
@@ -375,7 +375,7 @@ describe('10. precedence: provider_identity_issue beats tampered', () => {
     const unflagged = (await scanExpectingOneEvent(qr, { expectedVersionRowId: v1.id })).result;
 
     expect(unflagged.scanResult).toBe('tampered');
-    expect(unflagged.fieldVerification.tamperedFields).toEqual(['dosage_value']);
+    expect(unflagged.fieldVerification.tamperedFields).toEqual(['medicine_1.dosage_value']);
     expect(verifyIntegritySpy).toHaveBeenCalledTimes(1);
 
     console.log(

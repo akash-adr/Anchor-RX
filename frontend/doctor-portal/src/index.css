@@ -1,7 +1,10 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Portals (Doctor / Pharmacy / Audit): the system UI font stack. "Inter" used to be listed first here but was never
+     loaded, so these screens always rendered this fallback. It is removed so that loading Inter for the landing page
+     (index.html) can't silently change the portals' typography. Landing fonts live in src/landing/landing.css. */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 

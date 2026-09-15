@@ -4,12 +4,18 @@
  * Read-only queries for the AI risk engine's scoring payload (Module 8).
  * Only aggregate lookups the prescription_version repository doesn't already provide live here.
  * Drug classes are compared trimmed and case-insensitively (the hash engine also lowercases drug_class).
+ *
+ * Module 14: drug_class lives on prescription_medicine. These features use each prescription's FIRST medicine
+ * (sequence_number = 1) — the same documented single-medicine simplification as ml/buildScoringPayload.js.
  */
 
-// The latest version of each of a patient's prescriptions (a prescription's "current" row).
+const PRIMARY_MEDICINE_JOIN = 'JOIN prescription_medicine pm ON pm.prescription_version_id = pv.id AND pm.sequence_number = 1';
+
+// The latest version of each of a patient's prescriptions (a prescription's "current" row), with its first medicine's class.
 const LATEST_VERSIONS_FOR_PATIENT = `
-  SELECT pv.prescription_id, pv.drug_class, pv.status
+  SELECT pv.prescription_id, pm.drug_class, pv.status
     FROM prescription_version pv
+    ${PRIMARY_MEDICINE_JOIN}
     JOIN (SELECT prescription_id, MAX(version_number) AS latest
             FROM prescription_version
            WHERE patient_id = ?
@@ -22,7 +28,7 @@ function createMlFeatureRepository(pool) {
     return rows[0] || null;
   }
 
-  /** OTHER prescriptions of this patient whose CURRENT version is active and in the same drug class. */
+  /** OTHER prescriptions of this patient whose CURRENT version is active and whose first medicine is in the same class. */
   async function findActiveSameClassPrescriptions(patientId, drugClass, excludePrescriptionId) {
     const [rows] = await pool.execute(
       `SELECT prescription_id FROM (${LATEST_VERSIONS_FOR_PATIENT}) latest
@@ -34,15 +40,16 @@ function createMlFeatureRepository(pool) {
   }
 
   /**
-   * { drugClass: count } over the provider's OTHER prescriptions (one count per prescription, using its
-   * version 1 row — provider_id and drug_class never change across a prescription's versions).
+   * { drugClass: count } over the provider's OTHER prescriptions (one count per prescription, using its version 1 row
+   * and first medicine — provider_id and drug classes never change across a prescription's versions).
    */
   async function getProviderDrugClassHistory(providerId, excludePrescriptionId) {
     const [rows] = await pool.execute(
-      `SELECT LOWER(TRIM(drug_class)) AS drug_class, COUNT(*) AS n
-         FROM prescription_version
-        WHERE provider_id = ? AND version_number = 1 AND prescription_id <> ?
-        GROUP BY LOWER(TRIM(drug_class))
+      `SELECT LOWER(TRIM(pm.drug_class)) AS drug_class, COUNT(*) AS n
+         FROM prescription_version pv
+         ${PRIMARY_MEDICINE_JOIN}
+        WHERE pv.provider_id = ? AND pv.version_number = 1 AND pv.prescription_id <> ?
+        GROUP BY LOWER(TRIM(pm.drug_class))
         ORDER BY drug_class`,
       [providerId, excludePrescriptionId],
     );

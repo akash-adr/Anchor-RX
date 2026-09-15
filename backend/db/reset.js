@@ -9,6 +9,8 @@ const TABLES = [
   'amendment_attempts',
   'delegated_amendments',
   'verification_event',
+  'dispensing_record',
+  'prescription_medicine',
   'prescription_version',
   'patient',
   'pharmacy',
