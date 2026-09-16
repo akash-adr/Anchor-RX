@@ -52,6 +52,9 @@ export default function PatientCombobox({ patients, value, onChange, disabled, i
         <span>
           <span className="font-medium">{selected.name}</span>
           <span className="ml-2 font-mono text-xs text-slate-500">{selected.patientId}</span>
+          <span className="ml-2 text-xs text-slate-600" data-testid="selected-patient-age">
+            Age {selected.age}
+          </span>
         </span>
         <button
           type="button"
@@ -116,7 +119,10 @@ export default function PatientCombobox({ patients, value, onChange, disabled, i
               className={`flex cursor-pointer items-center justify-between px-3 py-2 text-sm ${index === activeIndex ? 'bg-teal-50' : ''}`}
             >
               <span className="font-medium">{p.name}</span>
-              <span className="font-mono text-xs text-slate-500">{p.patientId}</span>
+              <span className="text-xs text-slate-500">
+                <span className="mr-2">Age {p.age}</span>
+                <span className="font-mono">{p.patientId}</span>
+              </span>
             </li>
           ))}
         </ul>

@@ -296,6 +296,7 @@ export default function CreatePrescription({ onAmend }: { onAmend?: (prescriptio
     );
   }
 
+  const selectedPatient = patients.status === 'ready' ? (patients.patients.find((p) => p.patientId === form.patientId) ?? null) : null;
   const medicineCount = form.medicines.length;
 
   return (
@@ -319,7 +320,13 @@ export default function CreatePrescription({ onAmend }: { onAmend?: (prescriptio
       )}
 
       <form onSubmit={onSubmit} noValidate className="mt-6 space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <Field label="Patient" htmlFor="patient" error={fieldErrors.top.patientId}>
+        <Field
+          label="Patient"
+          htmlFor="patient"
+          error={fieldErrors.top.patientId}
+          // Age is shown, never typed: it comes from the patient record and is what the AI risk check scores with.
+          hint={selectedPatient ? `Age ${selectedPatient.age} (from the patient record) — used by the AI risk check` : undefined}
+        >
           {patients.status === 'loading' && <div className="h-10 animate-pulse rounded-md bg-slate-100" aria-label="Loading patients" />}
           {patients.status === 'error' && (
             <div className="space-y-2">

@@ -52,6 +52,10 @@ export interface ScanResult {
 export interface Patient {
   patientId: string;
   name: string;
+  dob: string; // ISO timestamp from the patient record, e.g. "1985-04-12T00:00:00.000Z" (not displayed; use `age`)
+  // Whole years, derived server-side from dob — display only, and the exact age the AI risk check scores with.
+  // Never typed by the prescriber and never stored on a prescription.
+  age: number;
 }
 
 /** One medicine of a new prescription. Its position in `medicines` becomes its sequence_number (1-based). */

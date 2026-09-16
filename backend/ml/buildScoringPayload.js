@@ -241,4 +241,5 @@ module.exports = {
   ScoringPayloadError,
   PAYLOAD_VERSION,
   DEFAULT_PATIENT_WEIGHT_KG,
+  wholeYearsBetween, // exported so the patients endpoint DISPLAYS exactly the age the AI is scored with
 };

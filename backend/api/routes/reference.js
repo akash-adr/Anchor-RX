@@ -2,6 +2,7 @@
 
 const express = require('express');
 const { ApiError, handleReadError } = require('../errors');
+const { wholeYearsBetween } = require('../../ml/buildScoringPayload');
 
 /** Read-only reference data for form dropdowns. Errors fall through to the error middleware (500). */
 function createReferenceRouter({ pool, repository }) {
@@ -26,9 +27,15 @@ function createReferenceRouter({ pool, repository }) {
     }
   });
 
+  /**
+   * dob and age are DISPLAY data for the prescriber. age is derived here with the SAME helper the scoring payload
+   * uses, so the portal shows exactly the age the AI is scored with. Age is never accepted from a client and is
+   * never stored on a prescription — the patient record's date of birth stays the only source.
+   */
   router.get('/patients', async (req, res) => {
-    const [rows] = await pool.query('SELECT patient_id, name FROM patient ORDER BY patient_id');
-    res.json(rows.map((row) => ({ patientId: row.patient_id, name: row.name })));
+    const [rows] = await pool.query('SELECT patient_id, name, dob FROM patient ORDER BY patient_id');
+    const now = new Date();
+    res.json(rows.map((row) => ({ patientId: row.patient_id, name: row.name, dob: row.dob, age: wholeYearsBetween(row.dob, now) })));
   });
 
   return router;
