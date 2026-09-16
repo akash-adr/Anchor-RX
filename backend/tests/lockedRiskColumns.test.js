@@ -72,3 +72,23 @@ test('CHECKs: all-or-nothing, score 0–100, band low/review/high', async () => 
   await expect(lock(50, 'medium', [])).rejects.toMatchObject({ code: 'ER_CHECK_CONSTRAINT_VIOLATED' });
   expect(await read()).toMatchObject({ locked_risk_score: null, locked_risk_band: null, locked_risk_reasons: null });
 });
+
+// ── migration 014: 'unavailable' locks ─────────────────────────────────────────────────────────────────────────
+
+const UNAVAILABLE_REASONS = [{ source: 'system', feature: 'ai_service', explanation: 'AI risk assessment was unavailable at this time.' }];
+
+test('014: an unavailable lock (band unavailable, NULL score, system reason) is accepted — and is write-once too', async () => {
+  await pool.execute("UPDATE prescription_medicine SET locked_risk_band = 'unavailable', locked_risk_reasons = ? WHERE medicine_id = ?", [JSON.stringify(UNAVAILABLE_REASONS), medicineId]);
+  expect(await read()).toMatchObject({ locked_risk_score: null, locked_risk_band: 'unavailable', locked_risk_reasons: UNAVAILABLE_REASONS });
+  await expect(pool.execute("UPDATE prescription_medicine SET locked_risk_score = 40, locked_risk_band = 'review' WHERE medicine_id = ?", [medicineId])).rejects.toMatchObject({ sqlState: '45000' });
+  await expect(pool.execute('UPDATE prescription_medicine SET locked_risk_band = NULL, locked_risk_reasons = NULL WHERE medicine_id = ?', [medicineId])).rejects.toMatchObject({ sqlState: '45000' });
+  expect(await read()).toMatchObject({ locked_risk_score: null, locked_risk_band: 'unavailable' });
+});
+
+test('014 CHECKs: unavailable needs a NULL score and a reason; a scored band still needs a score', async () => {
+  const check = { code: 'ER_CHECK_CONSTRAINT_VIOLATED' };
+  await expect(pool.execute("UPDATE prescription_medicine SET locked_risk_score = 10, locked_risk_band = 'unavailable', locked_risk_reasons = '[]' WHERE medicine_id = ?", [medicineId])).rejects.toMatchObject(check);
+  await expect(pool.execute("UPDATE prescription_medicine SET locked_risk_band = 'unavailable' WHERE medicine_id = ?", [medicineId])).rejects.toMatchObject(check);
+  await expect(pool.execute("UPDATE prescription_medicine SET locked_risk_band = 'low', locked_risk_reasons = '[]' WHERE medicine_id = ?", [medicineId])).rejects.toMatchObject(check);
+  expect(await read()).toMatchObject({ locked_risk_score: null, locked_risk_band: null, locked_risk_reasons: null });
+});

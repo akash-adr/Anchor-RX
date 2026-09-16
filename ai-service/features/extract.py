@@ -2,10 +2,10 @@
 Feature extraction for the Anchor Rx AI risk engine (Module 8).
 
 extract_features(payload, corpus_stats) turns ONE ScoringPayload (see features/payload.py, produced by
-backend/ml/buildScoringPayload.js) into exactly the 13 features below. It is pure: no I/O, no model, no DB.
+backend/ml/buildScoringPayload.js) into exactly the 15 features below. It is pure: no I/O, no model, no DB.
 
-  numeric      dose_value, dose_per_kg, frequency, duration_days, age, weight, drug_combination_flag,
-               drug_rarity_score, provider_pattern_score, patient_velocity, dose_frequency_product
+  numeric      dose_value, dose_per_kg, dose_ratio, unit_mismatch, frequency, duration_days, age, weight,
+               drug_combination_flag, drug_rarity_score, provider_pattern_score, patient_velocity, dose_frequency_product
   categorical  route, drug_class      (encoded ONLY by features/encoding.py's shared ColumnTransformer)
 
 Design notes:
@@ -14,6 +14,12 @@ Design notes:
   by the preprocessing pipeline; the rule engine can flag it).
 - dose_value is converted to mg for mass units (g, mg, mcg/µg) so "500 mcg" is not 1000× off; other units
   (ml, tablet, puff, IU, …) are kept as the raw number.
+- dose_ratio / unit_mismatch compare the dose with data/dosage_reference.py IN THE REFERENCE'S UNIT. dose_ratio = dose ÷
+  the drug's dose_max (1.0 = at the typical maximum). Units match when they are identical, or when the reference is mg
+  and the prescription uses any mass unit (converted to mg). On a mismatch (e.g. ml for an mg drug) no cross-unit ratio
+  is computed: dose_ratio = UNIT_MISMATCH_DOSE_RATIO and unit_mismatch = 1. A drug that is not in the reference (e.g.
+  Zytee) has no expected unit: dose_ratio = None (the existing missing-value path, imputed with the training median)
+  and unit_mismatch = 0.
 - drug_rarity_score and provider_pattern_score depend on corpus statistics, passed in explicitly (built from
   the training corpus in Step 2), so this function never hard-codes a corpus.
 """
@@ -27,6 +33,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar, Iterable, Mapping
 
+from data.dosage_reference import get_reference
 from features.payload import ScoringPayload
 
 # PLACEHOLDER: synthetic population-average adult weight (kg) until real weights are captured consistently.
@@ -41,6 +48,8 @@ PROVIDER_PRIOR_STRENGTH = 5.0
 FEATURE_NAMES: tuple[str, ...] = (
     "dose_value",
     "dose_per_kg",
+    "dose_ratio",
+    "unit_mismatch",
     "frequency",
     "duration_days",
     "route",
@@ -53,6 +62,7 @@ FEATURE_NAMES: tuple[str, ...] = (
     "patient_velocity",
     "dose_frequency_product",
 )
+FEATURE_COLUMNS = FEATURE_NAMES  # alias: the feature vector's shape (same tuple)
 
 _MASS_UNIT_TO_MG = {"mg": 1.0, "g": 1000.0, "gm": 1000.0, "mcg": 0.001, "µg": 0.001, "ug": 0.001}
 # Units whose dose_value is converted to mg by extract_features (anything else stays a raw number).
@@ -65,6 +75,10 @@ _ABBREVIATION_DOSES_PER_DAY = {"od": 1, "qd": 1, "bd": 2, "bid": 2, "tds": 3, "t
 
 # Upper bound used for "as needed" (PRN) instructions without an explicit interval.
 PRN_ASSUMED_DOSES_PER_DAY = 4.0
+
+# dose_ratio when the prescribed unit cannot be compared with the reference unit: a fixed value that reads as clearly
+# anomalous (3× the typical maximum) instead of a meaningless cross-unit number.
+UNIT_MISMATCH_DOSE_RATIO = 3.0
 
 
 class FeatureExtractionError(ValueError):
@@ -264,6 +278,26 @@ def provider_pattern_score(drug_class: str, provider_history: Mapping[str, int],
 # Extraction
 # ---------------------------------------------------------------------------------------------------------
 
+def dose_ratio_and_unit_mismatch(drug_name: str, dose_value: float, dose_unit: str) -> tuple[float | None, int]:
+    """
+    (dose_ratio, unit_mismatch) for one prescription against data/dosage_reference.py:
+      drug not in the reference            → (None, 0)   neutral: no expected unit to compare against
+      units comparable (same, or mass→mg)  → (dose in the reference unit ÷ dose_max, 0)
+      units NOT comparable                 → (UNIT_MISMATCH_DOSE_RATIO, 1)   never a cross-unit ratio
+    """
+    ref = get_reference(drug_name)
+    if ref is None:
+        return None, 0
+    prescribed, expected = dose_unit.strip().lower(), ref.unit.strip().lower()
+    if expected == "mg" and prescribed in MASS_UNITS:
+        dose_in_reference_unit = dose_in_mg(dose_value, prescribed)
+    elif prescribed == expected:
+        dose_in_reference_unit = dose_value
+    else:
+        return UNIT_MISMATCH_DOSE_RATIO, 1
+    return round(dose_in_reference_unit / float(ref.typical_dose_max), 6), 0
+
+
 def _to_payload(payload: ScoringPayload | Mapping[str, Any]) -> ScoringPayload:
     if isinstance(payload, ScoringPayload):
         return payload
@@ -289,10 +323,13 @@ def extract_features(payload: ScoringPayload | Mapping[str, Any], corpus_stats: 
     dose_value = dose_in_mg(raw_dose, p.doseUnit)
     weight = float(p.patientWeight) if p.patientWeight is not None else DEFAULT_PATIENT_WEIGHT_KG
     doses_per_day = parse_doses_per_day(p.frequency)
+    dose_ratio, unit_mismatch = dose_ratio_and_unit_mismatch(p.drugName, raw_dose, p.doseUnit)
 
     features: dict[str, Any] = {
         "dose_value": round(dose_value, 6),
         "dose_per_kg": round(dose_value / weight, 6),
+        "dose_ratio": dose_ratio,
+        "unit_mismatch": unit_mismatch,
         "frequency": doses_per_day,
         "duration_days": float(p.durationDays),
         "route": p.route.strip().lower() or "oral",

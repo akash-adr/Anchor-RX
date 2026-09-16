@@ -23,12 +23,14 @@ def test_generation_is_deterministic_for_a_seed():
     assert corpus_sha256(generate_normal_corpus(300, seed=5)) != corpus_sha256(generate_normal_corpus(300, seed=6))
 
 
-def test_every_row_extracts_13_complete_features(corpus):
+def test_every_row_extracts_every_feature_and_never_a_unit_mismatch(corpus):
     stats = CorpusStats.from_payloads(corpus)
     for payload in corpus:
         features = extract_features(payload, stats)  # also validates the ScoringPayload contract
         assert tuple(features) == FEATURE_NAMES
         assert features["frequency"] is not None, payload["frequency"]  # every generated phrasing must parse
+        assert features["unit_mismatch"] == 0, payload  # normal corpus rows always use the reference's unit
+        assert 0 < features["dose_ratio"] <= 1.0, payload  # inside the reference range
 
 
 def test_rows_stay_inside_the_synthetic_reference_ranges(corpus):

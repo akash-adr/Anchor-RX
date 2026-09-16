@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Module 15 Step 2 — POST /api/prescriptions/preview-risk and /confirm, over a real socket against anchor_rx_test.
+ * Module 15 Step 2 — POST /api/prescriptions/assess-risk and /confirm, over a real socket against anchor_rx_test.
  *
  * The AI service is a stub fetch; every scoring entry point is wrapped in a jest spy so the tests can prove WHERE
  * scoring happens: preview scores each medicine once; confirm scores NOTHING and locks exactly what was cached.
@@ -113,41 +113,47 @@ const ZERO_SCORING_CALLS = { buildSharedContext: 0, scoreAllMedicines: 0, scoreP
 
 // ── (a) ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-test('(a) preview-risk scores every medicine once and creates ZERO database rows in any table', async () => {
+test('(a) assess-risk scores every medicine once and creates ZERO database rows in any table', async () => {
   const before = await allRowCounts();
 
-  const preview = await call('POST', '/api/prescriptions/preview-risk', SUBMISSION);
+  const preview = await call('POST', '/api/prescriptions/assess-risk', SUBMISSION);
 
   expect(preview.status).toBe(200);
   expect(Object.keys(preview.body).sort()).toEqual(['medicines', 'previewToken']);
   expect(preview.body.previewToken).toMatch(/^[0-9a-f-]{36}$/);
   expect(preview.body.medicines).toEqual([
-    { drugName: 'Ibuprofen', riskScore: 62, riskBand: 'review', reasons: AI_RESULTS.Ibuprofen.reasons },
-    { drugName: 'Naproxen', riskScore: 58, riskBand: 'review', reasons: AI_RESULTS.Naproxen.reasons },
-    { drugName: 'Cetirizine', riskScore: 7, riskBand: 'low', reasons: [] },
+    { medicineIndex: 0, drugName: 'Ibuprofen', riskScore: 62, riskBand: 'review', reasons: AI_RESULTS.Ibuprofen.reasons },
+    { medicineIndex: 1, drugName: 'Naproxen', riskScore: 58, riskBand: 'review', reasons: AI_RESULTS.Naproxen.reasons },
+    { medicineIndex: 2, drugName: 'Cetirizine', riskScore: 7, riskBand: 'low', reasons: [] },
   ]);
   expect(scoringCallCounts()).toEqual({ buildSharedContext: 1, scoreAllMedicines: 1, scorePayloadViaAI: 3, scorePrescriptionViaAI: 0, fetch: 3 });
 
   expect(await allRowCounts()).toEqual(before);
 });
 
-test('(a) preview-risk validates like create, refuses client-supplied risk, and caches nothing when the AI service is down', async () => {
+test('(a) assess-risk validates like create, refuses client-supplied risk, and marks every medicine unavailable (not a 503) when the AI service is down', async () => {
   const before = await allRowCounts();
 
-  const invalid = await call('POST', '/api/prescriptions/preview-risk', { ...SUBMISSION, medicines: [{ ...SUBMISSION.medicines[0], dosageValue: '-5' }] });
+  const invalid = await call('POST', '/api/prescriptions/assess-risk', { ...SUBMISSION, medicines: [{ ...SUBMISSION.medicines[0], dosageValue: '-5' }] });
   expect(invalid).toMatchObject({ status: 400, body: { reason: 'INVALID_FIELD' } });
 
-  const smuggled = await call('POST', '/api/prescriptions/preview-risk', { ...SUBMISSION, medicines: [{ ...SUBMISSION.medicines[0], lockedRisk: { riskScore: 1, riskBand: 'low', reasons: [] } }] });
+  const smuggled = await call('POST', '/api/prescriptions/assess-risk', { ...SUBMISSION, medicines: [{ ...SUBMISSION.medicines[0], lockedRisk: { riskScore: 1, riskBand: 'low', reasons: [] } }] });
   expect(smuggled).toMatchObject({ status: 400, body: { reason: 'FIELD_NOT_ALLOWED' } });
 
-  const unknownPatient = await call('POST', '/api/prescriptions/preview-risk', { ...SUBMISSION, patientId: 'PAT-GHOST' });
+  const unknownPatient = await call('POST', '/api/prescriptions/assess-risk', { ...SUBMISSION, patientId: 'PAT-GHOST' });
   expect(unknownPatient).toMatchObject({ status: 400, body: { reason: 'UNKNOWN_REFERENCE' } });
   expect(spies.fetch).not.toHaveBeenCalled(); // nothing scored for an invalid submission
 
   aiDown = true;
-  const down = await call('POST', '/api/prescriptions/preview-risk', SUBMISSION);
-  expect(down).toMatchObject({ status: 503, body: { reason: 'AI_SERVICE_UNAVAILABLE' } });
-  expect(down.body.previewToken).toBeUndefined();
+  const down = await call('POST', '/api/prescriptions/assess-risk', SUBMISSION);
+  // Decision: an AI outage never skips the safeguard — each medicine is 'unavailable' and still has to be confirmed.
+  expect(down.status).toBe(200);
+  expect(down.body.medicines.map((m) => [m.medicineIndex, m.drugName, m.riskScore, m.riskBand, m.reasons[0].source])).toEqual([
+    [0, 'Ibuprofen', null, 'unavailable', 'system'],
+    [1, 'Naproxen', null, 'unavailable', 'system'],
+    [2, 'Cetirizine', null, 'unavailable', 'system'],
+  ]);
+  expect(typeof down.body.previewToken).toBe('string');
 
   expect(await allRowCounts()).toEqual(before);
 });
@@ -155,11 +161,11 @@ test('(a) preview-risk validates like create, refuses client-supplied risk, and 
 // ── (b) ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
 test('(b) confirm creates the prescription with locked_risk_* EXACTLY as cached — and scores nothing again', async () => {
-  const preview = await call('POST', '/api/prescriptions/preview-risk', SUBMISSION);
+  const preview = await call('POST', '/api/prescriptions/assess-risk', SUBMISSION);
   const before = await allRowCounts();
   jest.clearAllMocks(); // from here on, ANY scoring call would be counted against confirm
 
-  const confirmed = await call('POST', '/api/prescriptions/confirm', { previewToken: preview.body.previewToken });
+  const confirmed = await call('POST', '/api/prescriptions/confirm-and-create', { previewToken: preview.body.previewToken });
 
   expect(confirmed.status).toBe(201);
   expect(scoringCallCounts()).toEqual(ZERO_SCORING_CALLS); // no scoreAllMedicines, no scorePrescriptionViaAI, no HTTP call
@@ -176,7 +182,7 @@ test('(b) confirm creates the prescription with locked_risk_* EXACTLY as cached 
     [2, 'Naproxen', '58.00', 'review', AI_RESULTS.Naproxen.reasons],
     [3, 'Cetirizine', '7.00', 'low', []],
   ]);
-  expect(row.medicines.map((m) => ({ drugName: m.drug_name, riskScore: Number(m.locked_risk_score), riskBand: m.locked_risk_band, reasons: m.locked_risk_reasons }))).toEqual(preview.body.medicines);
+  expect(row.medicines.map((m) => ({ drugName: m.drug_name, riskScore: Number(m.locked_risk_score), riskBand: m.locked_risk_band, reasons: m.locked_risk_reasons }))).toEqual(preview.body.medicines.map(({ medicineIndex, ...medicine }) => medicine));
   expect(confirmed.body.medicines.map((m) => [m.sequenceNumber, m.lockedRisk])).toEqual(
     preview.body.medicines.map(({ riskScore, riskBand, reasons }, index) => [index + 1, { riskScore, riskBand, reasons }]),
   );
@@ -192,12 +198,12 @@ test('(b) confirm creates the prescription with locked_risk_* EXACTLY as cached 
 
 test('(b) locked risk is all-or-nothing with the version: a failure inside the transaction writes no row of any kind', async () => {
   await pool.execute("INSERT INTO provider (provider_id, name, license_number, credentials, status) VALUES ('PRV-TEMP', 'Temp (synthetic)', 'LIC-TEMP', 'MBBS', 'active')");
-  const preview = await call('POST', '/api/prescriptions/preview-risk', { ...SUBMISSION, providerId: 'PRV-TEMP' });
+  const preview = await call('POST', '/api/prescriptions/assess-risk', { ...SUBMISSION, providerId: 'PRV-TEMP' });
   expect(preview.status).toBe(200);
   await pool.execute("DELETE FROM provider WHERE provider_id = 'PRV-TEMP'"); // the FK now fails inside createPrescription's transaction
   const before = await allRowCounts();
 
-  const confirmed = await call('POST', '/api/prescriptions/confirm', { previewToken: preview.body.previewToken });
+  const confirmed = await call('POST', '/api/prescriptions/confirm-and-create', { previewToken: preview.body.previewToken });
 
   expect(confirmed).toMatchObject({ status: 400, body: { reason: 'UNKNOWN_REFERENCE' } });
   expect(await allRowCounts()).toEqual(before); // no version, no medicine (no locked risk), no ledger entry
@@ -213,29 +219,29 @@ test('(c) confirm rejects invalid, already-used and expired tokens (and resubmit
   };
 
   // Already used: the first confirm succeeds, the second is refused.
-  const used = await call('POST', '/api/prescriptions/preview-risk', SUBMISSION);
-  expect((await call('POST', '/api/prescriptions/confirm', { previewToken: used.body.previewToken })).status).toBe(201);
-  const expiring = await call('POST', '/api/prescriptions/preview-risk', SUBMISSION);
+  const used = await call('POST', '/api/prescriptions/assess-risk', SUBMISSION);
+  expect((await call('POST', '/api/prescriptions/confirm-and-create', { previewToken: used.body.previewToken })).status).toBe(201);
+  const expiring = await call('POST', '/api/prescriptions/assess-risk', SUBMISSION);
   const before = await allRowCounts();
   jest.clearAllMocks();
 
-  expectExpired(await call('POST', '/api/prescriptions/confirm', { previewToken: used.body.previewToken }));
+  expectExpired(await call('POST', '/api/prescriptions/confirm-and-create', { previewToken: used.body.previewToken }));
 
   // Invalid / unknown.
-  expectExpired(await call('POST', '/api/prescriptions/confirm', { previewToken: '00000000-0000-4000-8000-000000000000' }));
-  expectExpired(await call('POST', '/api/prescriptions/confirm', { previewToken: 'not-a-real-token' }));
-  expect(await call('POST', '/api/prescriptions/confirm', {})).toMatchObject({ status: 400, body: { reason: 'PREVIEW_TOKEN_REQUIRED' } });
-  expect(await call('POST', '/api/prescriptions/confirm', { previewToken: 12345 })).toMatchObject({ status: 400, body: { reason: 'PREVIEW_TOKEN_REQUIRED' } });
+  expectExpired(await call('POST', '/api/prescriptions/confirm-and-create', { previewToken: '00000000-0000-4000-8000-000000000000' }));
+  expectExpired(await call('POST', '/api/prescriptions/confirm-and-create', { previewToken: 'not-a-real-token' }));
+  expect(await call('POST', '/api/prescriptions/confirm-and-create', {})).toMatchObject({ status: 400, body: { reason: 'PREVIEW_TOKEN_REQUIRED' } });
+  expect(await call('POST', '/api/prescriptions/confirm-and-create', { previewToken: 12345 })).toMatchObject({ status: 400, body: { reason: 'PREVIEW_TOKEN_REQUIRED' } });
 
   // The client can't resubmit data or risk alongside the token.
-  expect(await call('POST', '/api/prescriptions/confirm', { previewToken: expiring.body.previewToken, medicines: SUBMISSION.medicines })).toMatchObject({
+  expect(await call('POST', '/api/prescriptions/confirm-and-create', { previewToken: expiring.body.previewToken, medicines: SUBMISSION.medicines })).toMatchObject({
     status: 400,
     body: { reason: 'FIELD_NOT_ALLOWED' },
   });
 
   // Expired: 10 minutes after the preview.
   clock += DEFAULT_TTL_MS;
-  expectExpired(await call('POST', '/api/prescriptions/confirm', { previewToken: expiring.body.previewToken }));
+  expectExpired(await call('POST', '/api/prescriptions/confirm-and-create', { previewToken: expiring.body.previewToken }));
 
   expect(await allRowCounts()).toEqual(before);
   expect(scoringCallCounts()).toEqual(ZERO_SCORING_CALLS); // rejected confirms never fall back to scoring either

@@ -11,7 +11,7 @@ const { LedgerError } = require('../ledger/ledgerService');
 const { AuditTimelineError } = require('../audit/timeline');
 const { AuditRecheckError } = require('../audit/recheck');
 const { AuditSummaryError } = require('../audit/summary');
-const { RiskPreviewError } = require('../ml/riskPreview');
+const { RiskPreviewError } = require('../ml/riskAssessmentService');
 const { ScoringPayloadError } = require('../ml/buildScoringPayload');
 const { AIServiceError } = require('../ml/scoreClient');
 
@@ -59,8 +59,8 @@ function handleChangeError(err, res, next) {
 }
 
 /**
- * preview-risk / confirm (Module 15): invalid input 400; expired/used/unknown preview token 410 (re-review and resubmit);
- * AI service down 503 (no preview is cached, so nothing can be confirmed without a shown risk).
+ * assess-risk / confirm-and-create: invalid input 400; expired/used/unknown token 410 (re-review and resubmit).
+ * AI-service outages are handled per medicine inside the assessment ('unavailable'), so 503 is only a safety net.
  */
 function handleRiskPreviewError(err, res, next) {
   if (err instanceof ApiError) return sendError(res, err.status, err.code, err.message);

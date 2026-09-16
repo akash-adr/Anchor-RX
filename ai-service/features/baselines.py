@@ -16,7 +16,7 @@ from typing import Any, ClassVar, Mapping
 
 import pandas as pd
 
-PER_CLASS_NUMERIC = ("dose_value", "frequency", "duration_days", "age")
+PER_CLASS_NUMERIC = ("dose_value", "dose_ratio", "frequency", "duration_days", "age")
 GLOBAL_NUMERIC = (
     "dose_value", "frequency", "duration_days", "age", "weight",
     "patient_velocity", "drug_rarity_score", "provider_pattern_score",

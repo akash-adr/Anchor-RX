@@ -1,7 +1,7 @@
 {
   "model_version": "isolation-forest-placeholder-v1",
-  "trained_at": "2026-09-15T16:19:41+00:00",
-  "training_seconds": 0.22,
+  "trained_at": "2026-09-15T16:26:46+00:00",
+  "training_seconds": 0.224,
   "versions": {
     "python": "3.13.5",
     "scikit_learn": "1.9.1",
@@ -19,6 +19,8 @@
   "feature_names": [
     "dose_value",
     "dose_per_kg",
+    "dose_ratio",
+    "unit_mismatch",
     "frequency",
     "duration_days",
     "route",
@@ -34,6 +36,8 @@
   "encoded_feature_names": [
     "numeric__dose_value",
     "numeric__dose_per_kg",
+    "numeric__dose_ratio",
+    "numeric__unit_mismatch",
     "numeric__frequency",
     "numeric__duration_days",
     "numeric__age",
@@ -66,20 +70,20 @@
   },
   "training_scores": {
     "raw": {
-      "min": 0.392608,
-      "p50": 0.441449,
-      "p90": 0.49971,
-      "p99": 0.551284,
-      "p99.9": 0.598386,
-      "max": 0.619273
+      "min": 0.393173,
+      "p50": 0.44807,
+      "p90": 0.502602,
+      "p99": 0.555482,
+      "p99.9": 0.600488,
+      "max": 0.616115
     },
     "normalized": {
       "min": 0.0,
       "p50": 0.0,
-      "p90": 15.912,
-      "p99": 30.0041,
-      "p99.9": 70.0003,
-      "max": 87.74
+      "p90": 15.232,
+      "p99": 30.0068,
+      "p99.9": 70.00462,
+      "max": 83.89
     },
     "share_normalized_above_30": 0.01,
     "share_normalized_above_70": 0.001
@@ -90,17 +94,17 @@
     "anchors": [
       {
         "training_quantile": 0.5,
-        "raw": 0.4414488145081791,
+        "raw": 0.44806958940987324,
         "normalized": 0.0
       },
       {
         "training_quantile": 0.99,
-        "raw": 0.5512839175363283,
+        "raw": 0.5554817579592342,
         "normalized": 30.0
       },
       {
         "training_quantile": 0.999,
-        "raw": 0.598386418083199,
+        "raw": 0.6004880378198155,
         "normalized": 70.0
       }
     ],
@@ -122,6 +126,7 @@
     "by_drug_class": {
       "ace_inhibitor": {
         "dose_value": 10.0,
+        "dose_ratio": 0.25,
         "frequency": 1.0,
         "duration_days": 60.0,
         "age": 60.0,
@@ -129,6 +134,7 @@
       },
       "antibiotic": {
         "dose_value": 300.0,
+        "dose_ratio": 0.666667,
         "frequency": 2.0,
         "duration_days": 7.0,
         "age": 43.0,
@@ -136,6 +142,7 @@
       },
       "anticoagulant": {
         "dose_value": 4.0,
+        "dose_ratio": 0.4,
         "frequency": 1.0,
         "duration_days": 60.0,
         "age": 68.0,
@@ -143,6 +150,7 @@
       },
       "antidiabetic": {
         "dose_value": 500.0,
+        "dose_ratio": 0.625,
         "frequency": 1.0,
         "duration_days": 60.0,
         "age": 56.0,
@@ -150,6 +158,7 @@
       },
       "antihistamine": {
         "dose_value": 15.0,
+        "dose_ratio": 0.75,
         "frequency": 3.0,
         "duration_days": 5.0,
         "age": 43.0,
@@ -157,6 +166,7 @@
       },
       "arb": {
         "dose_value": 50.0,
+        "dose_ratio": 0.5,
         "frequency": 1.0,
         "duration_days": 60.0,
         "age": 60.0,
@@ -164,6 +174,7 @@
       },
       "nsaid": {
         "dose_value": 200.0,
+        "dose_ratio": 0.75,
         "frequency": 3.0,
         "duration_days": 7.0,
         "age": 42.0,
@@ -171,6 +182,7 @@
       },
       "ppi": {
         "dose_value": 40.0,
+        "dose_ratio": 1.0,
         "frequency": 1.0,
         "duration_days": 14.0,
         "age": 43.0,
@@ -178,6 +190,7 @@
       },
       "ssri": {
         "dose_value": 50.0,
+        "dose_ratio": 0.5,
         "frequency": 1.0,
         "duration_days": 90.0,
         "age": 38.0,
@@ -185,6 +198,7 @@
       },
       "statin": {
         "dose_value": 20.0,
+        "dose_ratio": 0.5,
         "frequency": 1.0,
         "duration_days": 60.0,
         "age": 63.0,

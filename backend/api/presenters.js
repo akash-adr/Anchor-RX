@@ -64,9 +64,13 @@ function presentMedicine(row) {
     quantityPrescribed: row.quantity_prescribed,
     // Module 15: the AI risk shown to the prescriber at confirmation — stored once, never recalculated. null if not locked.
     lockedRisk:
-      row.locked_risk_score === null || row.locked_risk_score === undefined
+      row.locked_risk_band === null || row.locked_risk_band === undefined
         ? null
-        : { riskScore: Number(row.locked_risk_score), riskBand: row.locked_risk_band, reasons: row.locked_risk_reasons },
+        : {
+            riskScore: row.locked_risk_score === null ? null : Number(row.locked_risk_score), // null for an 'unavailable' lock
+            riskBand: row.locked_risk_band,
+            reasons: row.locked_risk_reasons,
+          },
   };
 }
 

@@ -106,9 +106,9 @@ async function lockedBytes(versionRowId) {
 }
 
 async function previewAndConfirm(submission) {
-  const preview = await call('POST', '/api/prescriptions/preview-risk', submission);
+  const preview = await call('POST', '/api/prescriptions/assess-risk', submission);
   expect(preview.status).toBe(200);
-  const confirmed = await call('POST', '/api/prescriptions/confirm', { previewToken: preview.body.previewToken });
+  const confirmed = await call('POST', '/api/prescriptions/confirm-and-create', { previewToken: preview.body.previewToken });
   expect(confirmed.status).toBe(201);
   return repository.getLatestVersion(confirmed.body.prescriptionId);
 }
@@ -137,8 +137,8 @@ test('1. retraining: re-scoring the same medicines through EVERY path leaves the
   const [[logged]] = await pool.query('SELECT risk_score, risk_band FROM trust_decision_log WHERE prescription_id = ? ORDER BY decision_id DESC LIMIT 1', [v1.prescription_id]);
   expect(logged).toEqual({ risk_score: 90, risk_band: 'high' });
 
-  // (d) a fresh preview-risk for the identical submission (never confirmed)
-  const again = await call('POST', '/api/prescriptions/preview-risk', SUBMISSION);
+  // (d) a fresh assess-risk for the identical submission (never confirmed)
+  const again = await call('POST', '/api/prescriptions/assess-risk', SUBMISSION);
   expect(again.body.medicines.map((m) => m.riskScore)).toEqual([90, 88]);
 
   expect(aiCalls.slice(retrainedCallsBefore).every((c) => c.model === 'retrained')).toBe(true);
@@ -167,7 +167,7 @@ test('2. amendment: the ORIGINAL version lock stays byte-for-byte identical; the
   // A fresh preview of the AMENDED medicines (retrained model) scores independently and changes neither version.
   model = 'retrained';
   const amended = { ...SUBMISSION, medicines: [{ ...SUBMISSION.medicines[0], dosageValue: '500' }, SUBMISSION.medicines[1]] };
-  const preview = await call('POST', '/api/prescriptions/preview-risk', amended);
+  const preview = await call('POST', '/api/prescriptions/assess-risk', amended);
   expect(preview.body.medicines.map((m) => m.riskScore)).toEqual([90, 88]);
   expect(await lockedBytes(v1.id)).toEqual(before);
   expect(await lockedBytes(v2.id)).toEqual(v2Bytes);

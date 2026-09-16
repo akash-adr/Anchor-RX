@@ -46,8 +46,8 @@ def test_grossly_implausible_prescription_is_high_and_rules_fill_the_reason_slot
 
 def test_ml_only_anomaly_is_explained_by_the_ml_and_can_never_reach_high(artifacts):
     """No rule fires; the ML flags the case (> 30) and explains it. With no rule hits the final score is 0.6 · ml (<= 60),
-    so an ML-only case reaches review only when ml >= 52. After the corrected-reference retrain this case scores
-    ml 48.27 → risk 29 (LOW); before the retrain it reached review. Documented as a real behaviour change, not re-tuned."""
+    so an ML-only case reaches review only when ml >= 52; its band follows from its own ML score. Before the corrected-
+    reference retrain this case reached review; after it, it stays low. Documented as a real behaviour change, not re-tuned."""
     result = score_prescription(ml_only_unusual_payload(), artifacts)
     ml = result["details"]["ml_subscore"]
     assert result["details"]["rule_subscore"] == 0

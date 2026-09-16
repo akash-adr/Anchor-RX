@@ -14,7 +14,7 @@ Each rule function returns RuleResult(fired, points, explanation). run_rule_engi
     }
 notEvaluated exists so that "no rule fired" is never mistaken for "every check passed".
 
-Inputs: `features` is extract_features() output (13 keys; dose_value already in mg for mass units, frequency in
+Inputs: `features` is extract_features() output (15 keys; dose_value already in mg for mass units, frequency in
 doses/day). Rules that need the reference table also take a RuleContext (drug_name, dose_unit) from the payload,
 because drug_name and dose_unit are not model features.
 """

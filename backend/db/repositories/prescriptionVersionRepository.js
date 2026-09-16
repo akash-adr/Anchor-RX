@@ -64,6 +64,8 @@ const MEDICINE_COLUMNS = Object.freeze([
 
 const LOCKED_RISK_COLUMNS = Object.freeze(['locked_risk_score', 'locked_risk_band', 'locked_risk_reasons']);
 const RISK_BANDS = Object.freeze(['low', 'review', 'high']);
+// A medicine whose AI assessment was unavailable is still locked — with this band, a NULL score and the system reason.
+const UNAVAILABLE_RISK_BAND = 'unavailable';
 
 const SELECT_MEDICINE_COLUMNS = `medicine_id, prescription_version_id, sequence_number, ${MEDICINE_COLUMNS.join(', ')}, ${LOCKED_RISK_COLUMNS.join(', ')}`;
 
@@ -281,11 +283,17 @@ function normalizeLockedRisks(lockedRisks, medicineCount) {
     const label = `lockedRisks[${index}]`;
     if (!isPlainObject(risk)) throw new RepositoryError('INVALID_LOCKED_RISK', `${label} must be an object`);
     const { riskScore, riskBand, reasons } = risk;
-    if (typeof riskScore !== 'number' || !Number.isFinite(riskScore) || riskScore < 0 || riskScore > 100 || Math.round(riskScore * 100) !== riskScore * 100) {
-      throw new RepositoryError('INVALID_LOCKED_RISK', `${label}.riskScore must be a number 0–100 with at most 2 decimals`);
-    }
-    if (!RISK_BANDS.includes(riskBand)) {
-      throw new RepositoryError('INVALID_LOCKED_RISK', `${label}.riskBand must be one of ${RISK_BANDS.join(', ')}`);
+    if (riskBand === UNAVAILABLE_RISK_BAND) {
+      if (riskScore !== null) {
+        throw new RepositoryError('INVALID_LOCKED_RISK', `${label}: an '${UNAVAILABLE_RISK_BAND}' lock has no score (riskScore must be null)`);
+      }
+    } else {
+      if (typeof riskScore !== 'number' || !Number.isFinite(riskScore) || riskScore < 0 || riskScore > 100 || Math.round(riskScore * 100) !== riskScore * 100) {
+        throw new RepositoryError('INVALID_LOCKED_RISK', `${label}.riskScore must be a number 0–100 with at most 2 decimals`);
+      }
+      if (!RISK_BANDS.includes(riskBand)) {
+        throw new RepositoryError('INVALID_LOCKED_RISK', `${label}.riskBand must be one of ${[...RISK_BANDS, UNAVAILABLE_RISK_BAND].join(', ')}`);
+      }
     }
     const reasonsValid = Array.isArray(reasons) && reasons.every((r) => isPlainObject(r) && ['source', 'feature', 'explanation'].every((k) => typeof r[k] === 'string'));
     if (!reasonsValid) {

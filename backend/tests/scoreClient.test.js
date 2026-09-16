@@ -6,7 +6,7 @@
  */
 
 const http = require('http');
-const { createScoreClient, translateAIResponse, AIServiceError, DEFAULT_AI_SERVICE_URL } = require('../ml/scoreClient');
+const { createScoreClient, translateAIResponse, AIServiceError, DEFAULT_AI_SERVICE_URL, DEFAULT_TIMEOUT_MS } = require('../ml/scoreClient');
 const { ScoringPayloadError } = require('../ml/buildScoringPayload');
 const { decideTrust } = require('../trust/decideTrust');
 
@@ -207,5 +207,22 @@ test('real server that never answers → "timeout"', async () => {
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('RISK_ENGINE_URL takes precedence over the older AI_SERVICE_URL, and the default timeout is 3000 ms', async () => {
+  expect(DEFAULT_TIMEOUT_MS).toBe(3000);
+  const saved = { RISK_ENGINE_URL: process.env.RISK_ENGINE_URL, AI_SERVICE_URL: process.env.AI_SERVICE_URL };
+  try {
+    process.env.AI_SERVICE_URL = 'http://old-name.example.test:9000';
+    process.env.RISK_ENGINE_URL = 'http://risk-engine.example.test:8000';
+    const fetchImpl = jest.fn(async () => jsonResponse(PYTHON_RESPONSE));
+    await createScoreClient(null, { payloadBuilder: builder(), fetchImpl }).scorePrescriptionViaAI('RX-DEMO-0003', 1);
+    expect(fetchImpl.mock.calls[0][0]).toBe('http://risk-engine.example.test:8000/score');
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });

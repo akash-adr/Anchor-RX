@@ -1,8 +1,9 @@
 /**
  * Module 15 — review the AI risk for EVERY medicine before the prescription is authorized.
  *
- * Shown between "Authorize & anchor" (preview-risk: scores, saves nothing) and "Confirm & Authorize" (confirm: creates
- * the prescription with exactly this risk locked per medicine). Display only: the numbers come from the server's
+ * Shown between "Authorize & anchor" (assess-risk: scores, saves nothing) and "Confirm & Authorize" (confirm-and-create:
+ * creates the prescription with exactly this risk locked per medicine). A medicine the AI service could not score is
+ * shown as "AI risk assessment unavailable" and still has to be confirmed — the safeguard is never skipped. Display only: the numbers come from the server's
  * preview response, and confirming sends only the previewToken — this screen never sends risk data back.
  */
 
@@ -12,7 +13,7 @@ import { Chip, RISK_BAND_STYLE } from '../audit/auditUi';
 import type { NewMedicine, RiskPreview } from '../types';
 import ErrorNotice from './ErrorNotice';
 
-const SOURCE_LABEL = { rule_engine: 'Rule', ml_model: 'Model' } as const;
+const SOURCE_LABEL = { rule_engine: 'Rule', ml_model: 'Model', system: 'System' } as const;
 
 const formatDose = (value: string, unit: string) => `${value} ${unit}`;
 
@@ -39,7 +40,8 @@ export default function RiskConfirmation({
 }) {
   const expired = error?.reason === 'RISK_PREVIEW_EXPIRED';
   const busy = confirming || rechecking;
-  const flagged = preview.medicines.filter((m) => m.riskBand !== 'low').length;
+  const flagged = preview.medicines.filter((m) => m.riskBand === 'review' || m.riskBand === 'high').length;
+  const unavailable = preview.medicines.filter((m) => m.riskBand === 'unavailable').length;
 
   return (
     <section aria-labelledby="risk-confirm-title" data-testid="risk-confirmation" className="space-y-5">
@@ -50,7 +52,8 @@ export default function RiskConfirmation({
         <p className="mt-1 text-sm text-slate-600">
           Nothing has been saved yet. {preview.medicines.length} medicine{preview.medicines.length === 1 ? '' : 's'} for{' '}
           <span className="font-medium text-slate-800">{patientLabel}</span> were checked
-          {flagged > 0 ? ` · ${flagged} in the review or high band` : ' · all in the low band'}. Confirming locks these results to the prescription.
+          {flagged > 0 ? ` · ${flagged} in the review or high band` : unavailable === 0 ? ' · all in the low band' : ''}
+          {unavailable > 0 ? ` · AI risk assessment unavailable for ${unavailable}` : ''}. Confirming locks these results to the prescription.
         </p>
       </div>
 
@@ -73,10 +76,16 @@ export default function RiskConfirmation({
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-lg font-semibold text-slate-900" aria-label={`Risk score ${medicine.riskScore} out of 100`}>
-                    {medicine.riskScore}
-                    <span className="text-xs font-normal text-slate-500">/100</span>
-                  </span>
+                  {medicine.riskScore === null ? (
+                    <span className="font-mono text-lg font-semibold text-slate-500" aria-label="No AI risk score">
+                      —
+                    </span>
+                  ) : (
+                    <span className="font-mono text-lg font-semibold text-slate-900" aria-label={`Risk score ${medicine.riskScore} out of 100`}>
+                      {medicine.riskScore}
+                      <span className="text-xs font-normal text-slate-500">/100</span>
+                    </span>
+                  )}
                   <Chip className={band.chip}>{band.label}</Chip>
                 </div>
               </div>
@@ -139,6 +148,12 @@ export default function RiskConfirmation({
             <span className="inline-flex items-center gap-1 text-xs text-amber-900">
               <AlertTriangle aria-hidden className="h-3.5 w-3.5" />
               Review the flagged reasons before confirming
+            </span>
+          )}
+          {unavailable > 0 && (
+            <span className="inline-flex items-center gap-1 text-xs text-slate-700" data-testid="unavailable-note">
+              <AlertTriangle aria-hidden className="h-3.5 w-3.5" />
+              No AI assessment for {unavailable} medicine{unavailable === 1 ? '' : 's'} — confirm using your clinical review
             </span>
           )}
           <button

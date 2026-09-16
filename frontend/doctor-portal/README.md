@@ -5,10 +5,32 @@ React + TypeScript + Vite + Tailwind frontend for prescribers. It is a thin clie
 
 ## Run
 
+All THREE processes must be running — the AI risk engine is required for "Authorize & anchor":
+
 ```bash
-npm run api            # from the repo root — API on http://localhost:4000 (DB: anchor_rx)
+npm run api            # from the repo root — Node API on http://localhost:4000 (DB: anchor_rx)
 npm run doctor-portal  # from the repo root — portal on http://localhost:5173
+cd ai-service && .venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000   # AI risk engine (FastAPI) on port 8000
 ```
+
+**How they connect.** "Authorize & anchor" → `POST /api/prescriptions/assess-risk` (Node) → Node calls the AI risk
+engine's `POST /score` once per medicine, concurrently (`RISK_ENGINE_URL`, default `http://127.0.0.1:8000`; timeout
+`AI_SERVICE_TIMEOUT_MS`, default 3000 ms). "Confirm & Authorize" → `POST /api/prescriptions/confirm-and-create` with only
+the assessment token — nothing is re-scored.
+
+**If the AI engine is not running** (or times out), assess-risk still answers: each affected medicine is shown as
+"AI risk assessment unavailable", the prescriber must still confirm, and that is locked on the prescription. Start the
+engine before a demo so real scores appear.
+
+**For the demo**, from `ai-service/` with the venv activated:
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+`--host 0.0.0.0` listens on every network interface. Use it only when the Node API runs on a different machine than the
+AI engine (then start the API with `RISK_ENGINE_URL=http://<ai-engine-host>:8000`). The engine has no authentication, so
+on a single machine prefer `--host 127.0.0.1`.
 
 The Vite dev server proxies `/api` to port 4000. Set `VITE_API_BASE_URL` to call another API host directly.
 All HTTP calls live in [`src/api.ts`](src/api.ts); components never call `fetch` themselves.

@@ -1,13 +1,17 @@
 """
 Anchor Rx AI risk engine — HTTP wrapper (Module 8). Stateless: JSON in, JSON out; never touches MySQL.
 
-Run from ai-service/:
-    .venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Run from ai-service/ (required alongside the Node API — see frontend/doctor-portal/README.md "Run"):
+    .venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000          # local dev, Node on the same machine
+    uvicorn main:app --host 0.0.0.0 --port 8000                      # demo, venv activated — only if Node calls from another machine
 
     GET  /health   service + model status
+    GET  /drug-reference   DRUG_REFERENCE exactly as defined in data/dosage_reference.py (read-only reference data,
+                   no patient data) — the single source of truth the Doctor Portal's autofill reads via Node
     POST /score    body: ScoringPayload v1, exactly as backend/ml/buildScoringPayload.js produces it
                    200 → { risk_score, risk_band, reasons, details }   422 → invalid payload
-Port 8000: the Node API uses 4000 and the Vite portal 5173. Bound to localhost; only the Node backend should call it.
+Port 8000: the Node API uses 4000 and the Vite portal 5173. Only the Node backend should call it (RISK_ENGINE_URL);
+it has no authentication, so prefer 127.0.0.1 unless the Node API runs elsewhere.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from typing import Any, Literal
 from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel
 
+from data.dosage_reference import DRUG_REFERENCE
 from features.extract import FeatureExtractionError
 from features.payload import ScoringPayload
 from inference.score import score_prescription
@@ -70,6 +75,12 @@ def health(request: Request) -> dict[str, Any]:
         "corpus_rows": metadata.get("corpus", {}).get("rows"),
         "scikit_learn": metadata.get("versions", {}).get("scikit_learn"),
     }
+
+
+@app.get("/drug-reference")
+def drug_reference() -> dict[str, dict[str, Any]]:
+    """The full DRUG_REFERENCE dict, keyed by drug name. Returned as-is: no derived fields, no second copy."""
+    return DRUG_REFERENCE
 
 
 @app.post("/score", response_model=ScoreResponse)

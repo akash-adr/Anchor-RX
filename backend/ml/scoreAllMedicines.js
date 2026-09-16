@@ -7,17 +7,28 @@
  *   const results = await scoreAllMedicines(medicines, sharedContext);
  *   // → [{ medicineIndex, drugName, riskScore, riskBand, reasons }]  in submission order (medicineIndex 0-based)
  *
- * Call count: exactly ONE AI-service call per medicine per scoreAllMedicines() call — N medicines, N calls, made one at
- * a time in submission order. Every payload is built BEFORE the first call, so an invalid medicine fails the pass
- * without any AI call. If any AI call fails, the whole pass throws that AIServiceError (no partial result is returned);
- * the confirm flow (Step 3) decides what the prescriber sees.
+ * Call count: exactly ONE AI-service call per medicine per scoreAllMedicines() call — N medicines, N calls, all made
+ * CONCURRENTLY (a slow or dead service costs one timeout for the whole prescription, not N × timeout). Every payload is
+ * built BEFORE any call, so an invalid medicine fails the pass without any AI call.
+ *
+ * Per-medicine failure: when the call for ONE medicine fails with an AIServiceError (timeout, connection refused,
+ * non-200, unreadable response), only that medicine becomes
+ *   { riskScore: null, riskBand: 'unavailable', reasons: [AI_RISK_UNAVAILABLE_REASON] }
+ * and every other medicine keeps its real result. Any other error is a bug, not an outage, and is thrown.
  *
  * Duplication context: each medicine gets every OTHER medicine's drug_class as siblings, so two same-class medicines
  * in one visit are flagged even when neither overlaps any other active prescription.
  */
 
 const { createScoringPayloadBuilder, buildScoringPayloadForMedicine, ScoringPayloadError } = require('./buildScoringPayload');
-const { createScoreClient } = require('./scoreClient');
+const { createScoreClient, AIServiceError } = require('./scoreClient');
+
+const UNAVAILABLE_RISK_BAND = 'unavailable';
+const AI_RISK_UNAVAILABLE_REASON = Object.freeze({ source: 'system', feature: 'ai_service', explanation: 'AI risk assessment was unavailable at this time.' });
+
+function unavailableResult(medicineIndex, drugName) {
+  return { medicineIndex, drugName, riskScore: null, riskBand: UNAVAILABLE_RISK_BAND, reasons: [{ ...AI_RISK_UNAVAILABLE_REASON }] };
+}
 
 function createMedicineScorer(pool, { payloadBuilder = createScoringPayloadBuilder(pool), scoreClient = createScoreClient(pool, { payloadBuilder }) } = {}) {
   /**
@@ -25,7 +36,7 @@ function createMedicineScorer(pool, { payloadBuilder = createScoringPayloadBuild
    * @param {object} sharedContext from buildSharedContext
    * @returns {Promise<Array<{ medicineIndex: number, drugName: string, riskScore: number, riskBand: string, reasons: Array }>>}
    * @throws {ScoringPayloadError} NO_MEDICINES | INVALID_MEDICINE (before any AI call)
-   * @throws {AIServiceError} any AI-service failure
+   * AI-service failures do not throw: the affected medicine is returned as 'unavailable'.
    */
   async function scoreAllMedicines(medicines, sharedContext, featureInputs = null) {
     if (!Array.isArray(medicines) || medicines.length === 0) {
@@ -45,15 +56,20 @@ function createMedicineScorer(pool, { payloadBuilder = createScoringPayloadBuild
       ),
     );
 
-    const results = [];
-    for (const [medicineIndex, payload] of payloads.entries()) {
-      const risk = await scoreClient.scorePayloadViaAI(payload); // one call for this medicine — the only call site here
-      results.push({ medicineIndex, drugName: medicines[medicineIndex].drugName, riskScore: risk.riskScore, riskBand: risk.riskBand, reasons: risk.reasons });
-    }
-    return results;
+    // One call per medicine — the only call site here — all started together.
+    const settled = await Promise.allSettled(payloads.map((payload) => scoreClient.scorePayloadViaAI(payload)));
+    return settled.map((outcome, medicineIndex) => {
+      const { drugName } = medicines[medicineIndex];
+      if (outcome.status === 'fulfilled') {
+        const { riskScore, riskBand, reasons } = outcome.value;
+        return { medicineIndex, drugName, riskScore, riskBand, reasons };
+      }
+      if (!(outcome.reason instanceof AIServiceError)) throw outcome.reason; // not an AI outage — surface it
+      return unavailableResult(medicineIndex, drugName);
+    });
   }
 
   return Object.freeze({ buildSharedContext: payloadBuilder.buildSharedContext, scoreAllMedicines });
 }
 
-module.exports = { createMedicineScorer };
+module.exports = { createMedicineScorer, UNAVAILABLE_RISK_BAND, AI_RISK_UNAVAILABLE_REASON };

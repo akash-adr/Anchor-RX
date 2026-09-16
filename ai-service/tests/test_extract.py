@@ -10,6 +10,7 @@ from features.encoding import CATEGORICAL_FEATURES, NUMERIC_FEATURES, build_prep
 from features.extract import (
     DEFAULT_PATIENT_WEIGHT_KG,
     FEATURE_NAMES,
+    UNIT_MISMATCH_DOSE_RATIO,
     PROVIDER_PRIOR_STRENGTH,
     CorpusStats,
     FeatureExtractionError,
@@ -20,17 +21,17 @@ from features.extract import (
 )
 
 EXPECTED_KEYS = {
-    "dose_value", "dose_per_kg", "frequency", "duration_days", "route", "age", "weight", "drug_class",
+    "dose_value", "dose_per_kg", "dose_ratio", "unit_mismatch", "frequency", "duration_days", "route", "age", "weight", "drug_class",
     "drug_combination_flag", "drug_rarity_score", "provider_pattern_score", "patient_velocity", "dose_frequency_product",
 }
 
 
 # --- required by the spec -------------------------------------------------------------------------------
 
-def test_extract_features_produces_exactly_the_13_expected_keys(payload, corpus_stats):
+def test_extract_features_produces_exactly_the_15_expected_keys(payload, corpus_stats):
     features = extract_features(payload, corpus_stats)
     assert set(features) == EXPECTED_KEYS
-    assert len(features) == 13
+    assert len(features) == len(FEATURE_NAMES) == 15
     assert tuple(features) == FEATURE_NAMES
 
 
@@ -127,7 +128,10 @@ def test_corpus_stats_json_round_trip(tmp_path, corpus_stats):
 
 
 def test_unknown_category_at_inference_does_not_break_encoding(payload, corpus_stats):
-    preprocessor = build_preprocessor().fit(features_to_frame([extract_features(payload, corpus_stats)]))
+    # Fit on rows that include a drug from the reference: dose_ratio is None for a drug outside it (neutral fallback),
+    # and a column with NO observed value at fit time would be dropped by the imputer. The trained model always sees values.
+    listed = {**payload, "drugName": "Atorvastatin", "doseValue": "20.000"}
+    preprocessor = build_preprocessor().fit(features_to_frame([extract_features(payload, corpus_stats), extract_features(listed, corpus_stats)]))
     unseen = extract_features({**payload, "route": "intrathecal", "drugClass": "novel class"}, corpus_stats)
     encoded = preprocessor.transform(features_to_frame([unseen]))
     assert encoded.shape[1] == len(NUMERIC_FEATURES) + 2
@@ -155,6 +159,22 @@ def test_features_to_frame_rejects_drifted_feature_keys(payload, corpus_stats):
         features_to_frame([{**row, "surprise": 1}])
     assert list(features_to_frame([row]).columns) == list(FEATURE_NAMES)
     assert set(CATEGORICAL_FEATURES) | set(NUMERIC_FEATURES) == set(FEATURE_NAMES)
+
+
+@pytest.mark.parametrize(
+    ("drug", "dose", "unit", "expected"),
+    [
+        ("Amoxicillin", "500.000", "mg", (1.0, 0)),  # at the 500 mg maximum
+        ("Amoxicillin", "0.250", "g", (0.5, 0)),  # mass unit → converted to mg, still comparable
+        ("Amoxicillin", "5.000", "ml", (UNIT_MISMATCH_DOSE_RATIO, 1)),  # ml for an mg drug → mismatch, no cross-unit ratio
+        ("Diphenhydramine", "10.000", "ml", (0.5, 0)),  # liquid compared in ml
+        ("Diphenhydramine", "10.000", "mg", (UNIT_MISMATCH_DOSE_RATIO, 1)),  # mg for the ml drug → mismatch
+        ("Zytee", "1.000", "g", (None, 0)),  # not in the reference → neutral (imputed), no expected unit
+    ],
+)
+def test_dose_ratio_and_unit_mismatch(payload, corpus_stats, drug, dose, unit, expected):
+    features = extract_features({**payload, "drugName": drug, "doseValue": dose, "doseUnit": unit}, corpus_stats)
+    assert (features["dose_ratio"], features["unit_mismatch"]) == expected
 
 
 def test_dosage_reference_is_exactly_the_corrected_table_and_derives_only_from_it():

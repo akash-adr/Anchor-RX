@@ -35,6 +35,7 @@ if __package__ in (None, ""):  # run as a file (python3 <dir>/<script>.py): make
 
 from data.generate_normal_corpus import DEFAULT_CORPUS_PATH, corpus_sha256, generate_normal_corpus, read_corpus_jsonl
 from evaluation.disjointness import feature_fingerprint
+from features.extract import FEATURE_NAMES
 from evaluation.generate_anomalous_set import ANOMALOUS_SEED, CATEGORIES, DEFAULT_CASES_PER_CATEGORY, EvalCase, generate_anomalous_set
 from inference.score import get_artifacts, score_prescription
 from train.artifacts import ModelArtifacts
@@ -100,7 +101,7 @@ def build_eval_set(
         raise DisjointnessError(f"{overlap} held-out cases still overlap the training corpus")
 
     return cases, {
-        "method": "SHA-256 of the 13 model-visible features (IDs/timestamps/wording excluded), training corpus stats",
+        "method": f"SHA-256 of the {len(FEATURE_NAMES)} model-visible features (IDs/timestamps/wording excluded), training corpus stats",
         "training_corpus_rows": len(training),
         "training_corpus_sha256": artifacts.metadata["corpus"]["sha256"],
         "training_unique_fingerprints": len(training_fingerprints),

@@ -15,7 +15,7 @@ HOW DO WE KNOW WHICH FEATURE THE ISOLATION FOREST REACTED TO? (it has no built-i
   i.e. "had this been typical, the anomaly score would have been N points lower". The largest contributions become
   reasons; whether the value was above or below typical picks the wording.
   - Correlated inputs are reset TOGETHER so one signal isn't split and hidden: resetting the dose also recomputes
-    dose_per_kg and dose_frequency_product; frequency recomputes dose_frequency_product; weight recomputes dose_per_kg.
+    dose_per_kg and dose_frequency_product (and resets dose_ratio, unless it is the unit-mismatch value); frequency recomputes dose_frequency_product; weight recomputes dose_per_kg.
   - Contributions use the uncapped calibrated scale, so prescriptions already at 100 can still be explained.
   - ML reasons are produced only when the ML sub-score is above the low band (> 30: more unusual than 99% of normal
     training prescriptions) and only for groups contributing ≥ 5 points — ordinary prescriptions get no invented reasons.
@@ -60,6 +60,7 @@ ML_EXPLANATIONS: dict[tuple[str, str], str] = {
     ("rarity", "high"): "This medication is rarely prescribed in the reference data.",
     ("provider_pattern", "high"): "This drug class is unusual for this prescriber compared with their own history.",
     ("velocity", "high"): "Patient has received an unusually high number of prescriptions in the last 30 days.",
+    ("unit", "high"): "The dose unit does not match the unit this medication is normally prescribed in.",
 }
 
 
@@ -105,6 +106,8 @@ def build_occlusions(features: Mapping[str, Any], baselines: FeatureBaselines) -
             "dose_value": d,
             "dose_per_kg": d / weight,
             "dose_frequency_product": d * frequency if frequency is not None else None,
+            # dose_ratio is the same signal on the reference's scale; the unit-mismatch value belongs to the "unit" group.
+            **({"dose_ratio": typical["dose_ratio"]} if typical.get("dose_ratio") is not None and not features.get("unit_mismatch") else {}),
         })
     if typical.get("frequency") is not None:
         f = float(typical["frequency"])
@@ -117,6 +120,8 @@ def build_occlusions(features: Mapping[str, Any], baselines: FeatureBaselines) -
     if typical.get("route") is not None and features["route"] != typical["route"]:
         occlusions.append(Occlusion("route", "route", "different", {**features, "route": typical["route"]}))
     numeric("duplication", "drug_combination_flag", 0, {"drug_combination_flag": 0}, high_only=True)
+    if features.get("unit_mismatch"):
+        occlusions.append(Occlusion("unit", "unit_mismatch", "high", {**features, "unit_mismatch": 0, "dose_ratio": typical.get("dose_ratio")}))
     for group, feature in (("rarity", "drug_rarity_score"), ("provider_pattern", "provider_pattern_score"), ("velocity", "patient_velocity")):
         numeric(group, feature, typical.get(feature), {feature: typical.get(feature)}, high_only=True)
     return occlusions

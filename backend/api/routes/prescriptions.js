@@ -38,10 +38,11 @@ async function createdResponse(row) {
   };
 }
 
-function createPrescriptionRouter({ repository, amendmentService, prescriptionDocuments, riskPreview }) {
+function createPrescriptionRouter({ repository, amendmentService, prescriptionDocuments, riskAssessment }) {
   const router = express.Router();
 
-  // Creates WITHOUT locked risk. Kept for the current Doctor Portal until it moves to preview → confirm (Module 15).
+  // Creates WITHOUT locked risk, bypassing the risk safeguard. The Doctor Portal no longer uses it (it uses
+  // assess-risk → confirm-and-create); kept for existing API clients and tests.
   router.post('/', async (req, res, next) => {
     try {
       const row = await repository.createPrescription(toCreateInput(req.body));
@@ -52,30 +53,33 @@ function createPrescriptionRouter({ repository, amendmentService, prescriptionDo
   });
 
   /**
-   * Module 15 step 1 of 2: score every medicine, cache the result, save NOTHING.
-   * Body: the create body. → { previewToken, medicines: [{ drugName, riskScore, riskBand, reasons }] }
+   * Step 1 of 2 — "Authorize & anchor": score every medicine, cache the result server-side, save NOTHING.
+   * Body: the create body. → { previewToken, medicines: [{ medicineIndex, drugName, riskScore, riskBand, reasons }] }
+   * A medicine the AI service could not score comes back as riskBand 'unavailable' (riskScore null) — the
+   * confirmation screen still shows it and still requires the prescriber to confirm.
    */
-  router.post('/preview-risk', async (req, res, next) => {
+  router.post('/assess-risk', async (req, res, next) => {
     try {
-      res.json(await riskPreview.previewRisk(toCreateInput(req.body)));
+      res.json(await riskAssessment.assessPrescriptionRisk(toCreateInput(req.body)));
     } catch (err) {
       handleRiskPreviewError(err, res, next);
     }
   });
 
   /**
-   * Module 15 step 2 of 2: create the previewed prescription with its cached risk locked per medicine.
-   * Body: { previewToken } ONLY — the prescription data and risk come from the server-side cache, never the client.
-   * 410 RISK_PREVIEW_EXPIRED when the token is expired, already used, or unknown.
+   * Step 2 of 2 — "Confirm & Authorize": create the assessed prescription with its cached risk locked per medicine, via
+   * the one createPrescription (hash → ledger → version INSERT → medicine INSERTs with locked_risk_*, one transaction).
+   * Body: { previewToken } ONLY — prescription data and risk come from the server-side cache, never the client, and
+   * nothing is re-scored. 410 RISK_PREVIEW_EXPIRED when the token is expired, already used, or unknown.
    */
-  router.post('/confirm', async (req, res, next) => {
+  router.post('/confirm-and-create', async (req, res, next) => {
     try {
       const body = req.body ?? {};
       const extra = Object.keys(body).filter((key) => key !== 'previewToken');
       if (extra.length > 0) {
-        throw new ApiError(400, 'FIELD_NOT_ALLOWED', `confirm accepts only previewToken; the previewed prescription is used as-is (got: ${extra.join(', ')})`);
+        throw new ApiError(400, 'FIELD_NOT_ALLOWED', `confirm-and-create accepts only previewToken; the assessed prescription is used as-is (got: ${extra.join(', ')})`);
       }
-      const row = await riskPreview.confirmPrescription(body.previewToken);
+      const row = await riskAssessment.confirmAndCreate(body.previewToken);
       res.status(201).json(await createdResponse(row));
     } catch (err) {
       handleRiskPreviewError(err, res, next);

@@ -86,14 +86,38 @@ async function seed(pool) {
   return repo;
 }
 
+/**
+ * Named pitch fixture (demo runbook, Beat 4): Patient Kavya already holds an ACTIVE Amoxicillin prescription, so
+ * prescribing Roxithromycin (also "antibiotic") in the portal triggers the live duplication check.
+ * Created through the real createPrescription (hashes + ledger anchor). Idempotent and non-destructive: safe to run on
+ * a live database. Kept out of seed(pool) so the test suites' seeded fixtures stay unchanged.
+ */
+const DEMO_BETA = Object.freeze({
+  patient: { patient_id: 'PAT-DEMO-BETA', name: 'Patient Kavya (synthetic)', dob: '1994-06-18', weight: 58.0 },
+  prescriptionId: 'RX-DEMO-BETA-AMOX',
+  providerId: 'PRV-001',
+  medicine: { drugName: 'Amoxicillin', drugClass: 'antibiotic', dosageValue: '200', dosageUnit: 'mg', frequency: 'twice daily', durationDays: 3, quantityPrescribed: 6 },
+});
+
+async function seedDemoFixtures(pool) {
+  const { patient, prescriptionId, providerId, medicine } = DEMO_BETA;
+  await pool.execute('INSERT IGNORE INTO patient (patient_id, name, dob, weight) VALUES (?, ?, ?, ?)', [patient.patient_id, patient.name, patient.dob, patient.weight]);
+  const [[existing]] = await pool.execute('SELECT 1 AS found FROM prescription_version WHERE prescription_id = ? LIMIT 1', [prescriptionId]);
+  if (existing) return { prescriptionId, created: false };
+  const repo = createPrescriptionVersionRepository(pool, { generateSalt: deterministicDemoSalt });
+  await repo.createPrescription({ prescriptionId, patientId: patient.patient_id, providerId, medicines: [medicine] });
+  return { prescriptionId, created: true };
+}
+
 async function main() {
   const pool = createPool();
   try {
     const repo = await seed(pool);
+    await seedDemoFixtures(pool);
     const [[{ db }]] = await pool.query('SELECT DATABASE() AS db');
     console.log(`Seeded database: ${db}\n`);
 
-    for (const id of ['RX-DEMO-0001', 'RX-DEMO-0002', 'RX-DEMO-0003', 'RX-DEMO-0004']) {
+    for (const id of ['RX-DEMO-0001', 'RX-DEMO-0002', 'RX-DEMO-0003', 'RX-DEMO-0004', DEMO_BETA.prescriptionId]) {
       const chain = await repo.getPrescriptionChain(id);
       for (const v of chain) {
         const medicines = v.medicines
@@ -124,4 +148,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { seed, REFERENCE_DATA };
+module.exports = { seed, seedDemoFixtures, DEMO_BETA, REFERENCE_DATA };

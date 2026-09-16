@@ -1,7 +1,7 @@
 """
 Concrete train/eval disjointness proof for the Anchor Rx risk engine (Module 8, Step 5).
 
-A sample's fingerprint is the SHA-256 of its model-visible content: the 13 extract_features() values (floats rounded
+A sample's fingerprint is the SHA-256 of its model-visible content: every extract_features() value (FEATURE_NAMES) (floats rounded
 to 6 dp), computed with the TRAINING corpus statistics. IDs, timestamps and free-text wording are not part of it, so
 two prescriptions the model would see identically ("BD" vs "twice daily") get the same fingerprint — a stricter test
 than hashing the raw JSON. Train and eval are disjoint when their fingerprint sets do not intersect.

@@ -4,7 +4,7 @@ Anchor Rx — Module 8 serving function.
     score_prescription(payload) → { risk_score, risk_band, reasons, details }
 
     payload (ScoringPayload v1 from backend/ml/buildScoringPayload.js)
-      → extract_features                              13 features
+      → extract_features                              15 features
       → saved Isolation Forest pipeline               ML sub-score 0–100      (train/artifacts.py)
       → run_rule_engine                               rule sub-score 0–100    (rules/rule_engine.py)
       → aggregate_risk / risk_band                    final score + band      (inference/aggregator.py)

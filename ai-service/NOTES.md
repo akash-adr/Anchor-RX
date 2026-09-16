@@ -18,7 +18,7 @@
 
 ## Pipeline
 
-`payload (Node) → 13 features → [Isolation Forest → ML sub-score 0–100] + [rule engine → rule sub-score 0–100]
+`payload (Node) → 15 features → [Isolation Forest → ML sub-score 0–100] + [rule engine → rule sub-score 0–100]
 → aggregator → risk_score + band → reasons`
 
 - **ML sub-score:** −`score_samples` (the Liu et al. anomaly score), mapped through quantiles of the normal training
@@ -53,35 +53,40 @@ risk_score = round_half_up( max( rule_subscore, 0.6 · ml_subscore + 0.4 · rule
 ## Held-out evaluation — real numbers (`evaluation/report.md`)
 
 Retrained on the corrected 17-drug `DRUG_REFERENCE` (`data/dosage_reference.py`; corpus generator `reference-v2`,
-seed 20260915). Held-out set: 1,000 deliberately anomalous cases (200 each of: dose 3–5× max, extreme frequency,
+seed 20260915) with the 15-feature vector, including `dose_ratio` and `unit_mismatch`. Held-out set: 1,000 deliberately anomalous cases (200 each of: dose 3–5× max, extreme frequency,
 extreme duration, forced class duplication, two anomalies combined) plus 997 normal cases never used in training.
 **Positive = review or high**, fixed before running; nothing was tuned on these results.
 
 | Precision | Recall | F1 | False-negative rate | False-positive rate |
 |---|---|---|---|---|
-| **99.5%** | **65.5%** | **79.0%** | **34.5%** | **0.3%** |
+| **99.4%** | **64.1%** | **77.9%** | **35.9%** | **0.4%** |
 
-TP 655 · FN 345 · FP 3 · TN 994. Latency: median 7.04 ms, p95 14.1 ms, max 15.53 ms over 1,997 cases (target < 500 ms).
+TP 641 · FN 359 · FP 4 · TN 993. Latency: median 7.29 ms, p95 14.47 ms, max 17.41 ms over 1,997 cases (target < 500 ms).
 
-Before the corrected reference (previous placeholder table; kept as `evaluation/report.json.backup`): precision 99.7%,
-recall 61.8%, F1 76.3%, FNR 38.2%, FPR 0.2% (TP 618 · FN 382 · FP 2 · TN 993).
+Model history on this same held-out set:
+
+| Model | Precision | Recall | F1 | FNR | FPR | Backup |
+|---|---|---|---|---|---|---|
+| Original placeholder drug table, 13 features | 99.7% | 61.8% | 76.3% | 38.2% | 0.2% | `*.backup` |
+| Corrected 17-drug table, 13 features | 99.5% | 65.5% | 79.0% | 34.5% | 0.3% | `*.backup-pre-unit-mismatch` |
+| Corrected table + `dose_ratio` / `unit_mismatch` (current) | 99.4% | 64.1% | 77.9% | 35.9% | 0.4% | — |
 
 | Category | Recall |
 |---|---|
 | Dose 3–5× typical max | 100.0% (199 review, 1 high) |
 | Extreme frequency | 100.0% |
-| Two anomalies combined | 100.0% (55 of 200 high) |
-| Forced class duplication only | 19.5% |
-| Extreme duration only | 8.0% |
+| Two anomalies combined | 100.0% (57 of 200 high) |
+| Forced class duplication only | 16.0% |
+| Extreme duration only | 4.5% |
 
 | View | Precision | Recall | F1 | FPR |
 |---|---|---|---|---|
-| Full pipeline | 99.5% | 65.5% | 79.0% | 0.3% |
+| Full pipeline | 99.4% | 64.1% | 77.9% | 0.4% |
 | Rules alone | 100.0% | 60.0% | 75.0% | 0.0% |
-| ML alone (sub-score > 30) | 97.0% | 29.3% | 45.0% | 0.9% |
+| ML alone (sub-score > 30) | 96.2% | 27.6% | 42.9% | 1.1% |
 
 **Train/eval disjointness is proven, not assumed:**
-- Every case is fingerprinted by the SHA-256 of its 13 model-visible features.
+- Every case is fingerprinted by the SHA-256 of its 15 model-visible features.
 - The training file's hash matches the saved model's metadata, so it is the data the model was trained on.
 - Overlap between training and the held-out set is **0**. Three generated normal hold-out cases matched training rows
   and were removed.
@@ -89,26 +94,29 @@ recall 61.8%, F1 76.3%, FNR 38.2%, FPR 0.2% (TP 618 · FN 382 · FP 2 · TN 993)
 
 ### What these numbers honestly say
 
-1. **Recall is 65.5% because two whole categories are mostly missed, by design, not by accident.** Duplication-only
+1. **Recall is 64.1% because two whole categories are mostly missed, by design, not by accident.** Duplication-only
    (25 points) and duration-only (20 points) sit in the low band on purpose (Step 3: often intentional, rarely acute).
-   The ML lifts only some of them above 30 (19.5% and 8.0%). Revisit that weighting **on a fresh held-out seed**,
+   The ML lifts only some of them above 30 (16.0% and 4.5%). Revisit that weighting **on a fresh held-out seed**,
    not by tuning against this report.
-2. **Rules do most of the work.** The ML adds 55 true positives over rules alone, at the cost of 3 false positives. All
-   three are prescriptions at the TOP of their reference range (Metformin 1000 mg twice daily; Escitalopram 20 mg for
-   365 days) that the ML finds unusual for their class.
-3. **ML alone is weak on this set (29.3% recall).** Its value is unusual combinations the rules don't describe, not
+2. **Rules do most of the work.** The ML adds 41 true positives over rules alone, at the cost of 4 false positives. Three
+   are prescriptions at the TOP of their reference range (Metformin 1000 mg twice daily; Escitalopram 20 mg for 365 days);
+   the fourth is Metformin 775 mg twice daily with a duplication flag. All are in range, but unusual for their class to the ML.
+3. **ML alone is weak on this set (27.6% recall).** Its value is unusual combinations the rules don't describe, not
    replacing the rules. An ML-only case reaches review only when its ML sub-score is at least 52 (no rule hits → 0.6 × ML).
 4. **A 3–5× overdose reaches review; only 1 of 200 reached high**, where the ML escalated above the 45-point rule floor.
 5. **Some of the result is circular.** The dose, frequency and duration anomalies are defined against the same
    reference table the rules check, so 100% recall there shows the rules work as written, not that they generalise.
 6. **The false-positive rate is optimistic.** Held-out normals come from the same generator family as training.
 7. **Precision is inflated by the 50/50 mix.** Real anomaly prevalence is far lower, so precision would drop at the
-   same 0.3% FPR. Recall and FPR are the numbers to quote.
+   same 0.4% FPR. Recall and FPR are the numbers to quote.
 8. **Names and classes must match the table.** The reference uses classes like `antibiotic`/`antidiabetic`; the backend
-   seed data uses `penicillin antibiotic`/`biguanide`. A class the model never saw raises the ML sub-score (Amoxicillin
-   500 mg TDS: 5.8 → 20.9). A drug outside the table (e.g. **Zytee**, excluded on purpose, or "Benadryl syrup", which the
-   table lists as Diphenhydramine) skips the dose/frequency/duration rules (reported as not evaluated) but is **not
-   neutral for the ML**: Zytee 1 g TDS scores ML 56.94 → risk 34 (review).
+   seed data uses `penicillin antibiotic`/`biguanide`. A class the model never saw raises the ML sub-score. A drug outside
+   the table (e.g. **Zytee**, excluded on purpose, or "Benadryl syrup", which the table lists as Diphenhydramine) skips the
+   dose/frequency/duration rules (reported as not evaluated) and gets `dose_ratio` = missing, `unit_mismatch` = 0 — but an
+   unseen drug and class is still **not neutral for the ML**, which can score it as unusual.
+9. **Unit mismatch is its own signal.** A dose in a unit the reference cannot compare (e.g. ml for an mg drug) gets
+   `unit_mismatch` = 1 and `dose_ratio` = 3.0 instead of a meaningless cross-unit ratio. The synthetic normal corpus never
+   contains a mismatch, so the model has only ever seen `unit_mismatch` = 0.
 
 ## Reproduce
 

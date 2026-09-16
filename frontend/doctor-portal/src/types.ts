@@ -74,26 +74,43 @@ export interface NewPrescription {
   medicines: NewMedicine[];
 }
 
-export type RiskBand = 'low' | 'review' | 'high';
+/** One DRUG_REFERENCE row, exactly as the AI service defines it (ai-service/data/dosage_reference.py). */
+export interface DrugReferenceEntry {
+  dose_min: number;
+  dose_max: number;
+  dosage_unit: string;
+  dose_per_kg_max: number;
+  freq_min: number;
+  freq_max: number;
+  dur_min: number;
+  dur_max: number;
+  drug_class: string;
+}
 
-/** One ranked reason from the AI risk engine (Module 8). */
+/** GET /api/drug-reference — keyed by drug name. */
+export type DrugReference = Record<string, DrugReferenceEntry>;
+
+/** 'unavailable' = the AI service could not score this medicine; the prescriber still confirms it explicitly. */
+export type RiskBand = 'low' | 'review' | 'high' | 'unavailable';
+
+/** One ranked reason from the AI risk engine (Module 8), or the system's "unavailable" notice. */
 export interface RiskReason {
-  source: 'rule_engine' | 'ml_model';
+  source: 'rule_engine' | 'ml_model' | 'system';
   feature: string;
   explanation: string;
 }
 
-/** Module 15: risk locked at confirmation — stored once, never recalculated. */
+/** Risk locked at confirmation — stored once, never recalculated. riskScore is null for an 'unavailable' lock. */
 export interface LockedRisk {
-  riskScore: number;
+  riskScore: number | null;
   riskBand: RiskBand;
   reasons: RiskReason[];
 }
 
-/** POST /api/prescriptions/preview-risk — scores every medicine, saves nothing. medicines are in submission order. */
+/** POST /api/prescriptions/assess-risk — scores every medicine, saves nothing. medicines are in submission order. */
 export interface RiskPreview {
   previewToken: string;
-  medicines: Array<{ drugName: string; riskScore: number; riskBand: RiskBand; reasons: RiskReason[] }>;
+  medicines: Array<{ medicineIndex: number; drugName: string; riskScore: number | null; riskBand: RiskBand; reasons: RiskReason[] }>;
 }
 
 /** A stored medicine of one prescription version. medicineId belongs to that version only (copied forward as new rows). */

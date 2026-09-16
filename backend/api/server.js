@@ -18,10 +18,11 @@ const { createReferenceRouter } = require('./routes/reference');
 const { createPharmacyRouter } = require('./routes/pharmacy');
 const { createAuditRouter } = require('./routes/audit');
 const { createDispensingRouter } = require('./routes/dispensing');
+const { createDrugReferenceRouter, createDrugReferenceSource } = require('./routes/drugReference');
 const { createDispensing } = require('../dispensing/dispensePartial');
 const { createMedicineScorer } = require('../ml/scoreAllMedicines');
 const { createPreviewCache } = require('../ml/previewCache');
-const { createRiskPreviewService } = require('../ml/riskPreview');
+const { createRiskAssessmentService } = require('../ml/riskAssessmentService');
 const { createPharmacistRiskDisplay } = require('../ml/pharmacistRiskDisplay');
 const { createLiveDataBridge } = require('../ml/liveDataBridge');
 const { createPrescriptionDocuments } = require('../documents/prescriptionDocument');
@@ -54,8 +55,9 @@ function createApp({
   medicineScorer = createMedicineScorer(pool),
   previewCache = createPreviewCache(),
   liveDataBridge = createLiveDataBridge(pool),
-  riskPreview = createRiskPreviewService(pool, { repository, medicineScorer, previewCache, liveDataBridge }),
+  riskAssessment = createRiskAssessmentService(pool, { repository, medicineScorer, previewCache, liveDataBridge }),
   pharmacistRiskDisplay = createPharmacistRiskDisplay(pool),
+  drugReferenceSource = createDrugReferenceSource(),
   corsOrigins = parseCorsOrigins(process.env.CORS_ORIGINS),
 } = {}) {
   const app = express();
@@ -64,10 +66,11 @@ function createApp({
   app.use(express.json({ limit: '100kb' }));
 
   app.get('/api/health', (req, res) => res.json({ ok: true }));
-  app.use('/api/prescriptions', createPrescriptionRouter({ repository, amendmentService, prescriptionDocuments, riskPreview }));
+  app.use('/api/prescriptions', createPrescriptionRouter({ repository, amendmentService, prescriptionDocuments, riskAssessment }));
   app.use('/api/audit', createAuditRouter({ auditTimeline, integrityRecheck, auditSummary })); // ⚠ no access control — see routes/audit.js
   app.use('/api', createReferenceRouter({ pool, repository }));
   app.use('/api', createPharmacyRouter({ pool, pharmacyVerification, pharmacistRiskDisplay }));
+  app.use('/api', createDrugReferenceRouter({ drugReferenceSource })); // passthrough to the AI service's DRUG_REFERENCE
   app.use('/api', createDispensingRouter({ dispensing })); // Module 14 — ⚠ no auth yet (Module 11)
 
   app.use(notFoundHandler);

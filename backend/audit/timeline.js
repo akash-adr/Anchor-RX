@@ -97,8 +97,9 @@ class AuditTimelineError extends Error {
 
 /** The stored, write-once risk lock of one medicine row (null when this version's medicines were never locked). */
 function lockedRiskOf(medicine) {
-  if (medicine.locked_risk_score === null || medicine.locked_risk_score === undefined) return null;
-  return { riskScore: Number(medicine.locked_risk_score), riskBand: medicine.locked_risk_band, reasons: medicine.locked_risk_reasons };
+  if (medicine.locked_risk_band === null || medicine.locked_risk_band === undefined) return null;
+  const riskScore = medicine.locked_risk_score === null ? null : Number(medicine.locked_risk_score); // null when 'unavailable'
+  return { riskScore, riskBand: medicine.locked_risk_band, reasons: medicine.locked_risk_reasons };
 }
 
 function versionSnapshot(row) {

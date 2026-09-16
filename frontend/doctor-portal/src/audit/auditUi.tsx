@@ -41,10 +41,12 @@ export const SCAN_RESULT_STYLE: Record<AuditScanResult, { label: string; chip: s
 };
 
 // Module 15: AI risk bands reuse the decision tokens exactly — low = Dispense green, review = Review amber, high = Block red.
-export const RISK_BAND_STYLE: Record<'low' | 'review' | 'high', { label: string; chip: string; frame: string }> = {
+export const RISK_BAND_STYLE: Record<'low' | 'review' | 'high' | 'unavailable', { label: string; chip: string; frame: string }> = {
   low: { label: 'Low', chip: 'bg-emerald-600 text-white ring-emerald-700', frame: 'border-emerald-200 bg-emerald-50' },
   review: { label: 'Review', chip: 'bg-amber-400 text-amber-950 ring-amber-500', frame: 'border-amber-200 bg-amber-50' },
   high: { label: 'High', chip: 'bg-red-600 text-white ring-red-700', frame: 'border-red-200 bg-red-50' },
+  // No AI result: neutral grey, clearly labelled — never styled as if it were a low risk.
+  unavailable: { label: 'AI risk assessment unavailable', chip: 'bg-slate-200 text-slate-800 ring-slate-400', frame: 'border-slate-300 bg-slate-50' },
 };
 
 export const DECISION_STYLE: Record<AuditTrustDecisionValue, { chip: string; frame: string }> = {

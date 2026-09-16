@@ -1,21 +1,26 @@
 'use strict';
 
 /**
- * Anchor Rx — Module 15: preview-then-confirm prescription creation.
+ * Anchor Rx — risk assessment for prescription CREATION: assess → confirm-and-create.
+ * (Module 15's preview → confirm flow, renamed and upgraded when the Doctor Portal was wired end to end.)
  *
- *   previewRisk(submission)          validate → score every medicine (scoreAllMedicines) → cache { submission, scores }
- *                                    → { previewToken, medicines: [{ drugName, riskScore, riskBand, reasons }] }
- *                                    Writes NOTHING to the database.
- *   confirmPrescription(previewToken) retrieve (single use) → createPrescription(cached submission, cached scores)
- *                                    NEVER scores again: the locked risk is exactly what the prescriber was shown, and
- *                                    the saved prescription is exactly what was scored (the client resubmits nothing).
+ *   assessPrescriptionRisk(submission)        POST /api/prescriptions/assess-risk
+ *     validate exactly as createPrescription will → patient/provider exist
+ *     → liveDataBridge.buildFeatureInputs (patient velocity ONCE; per-medicine queries concurrent across medicines)
+ *     → scoreAllMedicines (one AI-service call per medicine, all concurrent; a failed call → that medicine only is
+ *       { riskScore: null, riskBand: 'unavailable', reasons: [system reason] })
+ *     → cache { submission, scores } SERVER-SIDE → { previewToken, medicines: [{ medicineIndex, drugName, riskScore,
+ *       riskBand, reasons }] } in submission order. Writes NOTHING to the database.
  *
- * Module 16: previewRisk calls liveDataBridge.buildFeatureInputs FIRST and scores with its live per-medicine
- * drug_combination_flag and patient_velocity. The two rarity scores are HELD (not sent) — see ml/liveDataBridge.js.
+ *   confirmAndCreate(previewToken)            POST /api/prescriptions/confirm-and-create
+ *     retrieve (single use) → the ONE createPrescription (hash → ledger anchor → version INSERT → medicine INSERTs
+ *     carrying locked_risk_*, one transaction). It NEVER scores again and never accepts prescription or risk data from
+ *     the client: what is locked is exactly what the prescriber was shown, for exactly what was scored.
  *
- * KNOWN GAP (Module 16 Step 2 decision): this preview → confirm → lock flow covers prescription CREATION only.
- * Amendments have no preview/confirm/lock step, so amended versions are not risk-scored and nothing passes
- * existingPrescriptionVersionId to buildFeatureInputs yet.
+ * An unavailable AI assessment never skips the safeguard: the medicine is shown as unavailable, the prescriber still has
+ * to confirm, and the lock records band 'unavailable' permanently (migration 014).
+ *
+ * KNOWN GAP: creation only. Amendments have no assess/confirm/lock step, so nothing passes existingPrescriptionVersionId.
  */
 
 const { createPrescriptionVersionRepository, validateNewPrescription } = require('../db/repositories/prescriptionVersionRepository');
@@ -34,7 +39,7 @@ class RiskPreviewError extends Error {
 const RISK_PREVIEW_EXPIRED_MESSAGE =
   'This risk assessment has expired, was already used, or is not valid. Review the risk assessment again and resubmit the prescription.';
 
-function createRiskPreviewService(
+function createRiskAssessmentService(
   pool,
   {
     repository = createPrescriptionVersionRepository(pool),
@@ -44,12 +49,12 @@ function createRiskPreviewService(
   } = {},
 ) {
   /**
-   * @param {object} submission { patientId, providerId, heightCm?, weightKg?, medicines: [...] } — createPrescription's input
+   * @param {object} submission { patientId, providerId, heightCm?, weightKg?, medicines: [...] } — createPrescription's
+   *        input. Patient age is derived server-side from the patient's date of birth, never taken from the client.
    * @throws {RepositoryError} the submission would be rejected by createPrescription (same validation, run first)
    * @throws {RiskPreviewError} UNKNOWN_REFERENCE
-   * @throws {AIServiceError} the AI service failed — nothing is cached
    */
-  async function previewRisk(submission) {
+  async function assessPrescriptionRisk(submission) {
     // Exactly the normalization createPrescription applies, so what is scored is what will be saved.
     const { top, medicines } = validateNewPrescription(submission);
 
@@ -61,8 +66,7 @@ function createRiskPreviewService(
       throw new RiskPreviewError('UNKNOWN_REFERENCE', `${!patient ? `patientId ${top.patient_id}` : `providerId ${top.provider_id}`} does not exist`);
     }
 
-    // Module 16: real per-medicine feature inputs from live data, BEFORE scoring. Creation only — no
-    // existingPrescriptionVersionId (amendments have no preview/confirm/lock step: known gap).
+    // Live feature inputs first: velocity once for the patient, duplication/rarity per medicine (concurrently).
     const featureInputs = await liveDataBridge.buildFeatureInputs({
       patientId: top.patient_id,
       providerId: top.provider_id,
@@ -83,6 +87,7 @@ function createRiskPreviewService(
       providerId: top.provider_id,
       heightCm: top.height_cm,
       weightKg: top.weight_kg,
+      knownPatientVelocity: featureInputs[0].patient_velocity, // already queried once — don't query it again
     });
     const scores = await medicineScorer.scoreAllMedicines(
       medicines.map((m) => ({
@@ -97,7 +102,7 @@ function createRiskPreviewService(
       featureInputs,
     );
 
-    const medicineResults = scores.map(({ drugName, riskScore, riskBand, reasons }) => ({ drugName, riskScore, riskBand, reasons }));
+    const medicineResults = scores.map(({ medicineIndex, drugName, riskScore, riskBand, reasons }) => ({ medicineIndex, drugName, riskScore, riskBand, reasons }));
     const previewToken = previewCache.store({ submission, scores: medicineResults });
     return { previewToken, medicines: medicineResults };
   }
@@ -105,23 +110,23 @@ function createRiskPreviewService(
   /**
    * @returns {Promise<object>} the created version row (with medicines carrying locked_risk_*)
    * @throws {RiskPreviewError} PREVIEW_TOKEN_REQUIRED | RISK_PREVIEW_EXPIRED (expired, already used, or unknown)
-   * @throws {RepositoryError} createPrescription refused (e.g. a reference disappeared) — nothing was written
+   * @throws {RepositoryError} createPrescription refused — nothing was written (one transaction)
    */
-  async function confirmPrescription(previewToken) {
+  async function confirmAndCreate(previewToken) {
     if (typeof previewToken !== 'string' || previewToken.trim() === '') {
-      throw new RiskPreviewError('PREVIEW_TOKEN_REQUIRED', 'previewToken is required: preview the risk assessment before confirming');
+      throw new RiskPreviewError('PREVIEW_TOKEN_REQUIRED', 'previewToken is required: assess the risk before confirming');
     }
     const cached = previewCache.retrieve(previewToken);
     if (!cached) {
       throw new RiskPreviewError('RISK_PREVIEW_EXPIRED', RISK_PREVIEW_EXPIRED_MESSAGE);
     }
-    // No scoring call here — deliberately. The cached result IS the locked risk.
+    // No scoring call here — deliberately. The cached result (including any 'unavailable' medicine) IS the locked risk.
     return repository.createPrescription(cached.submission, {
       lockedRisks: cached.scores.map(({ riskScore, riskBand, reasons }) => ({ riskScore, riskBand, reasons })),
     });
   }
 
-  return Object.freeze({ previewRisk, confirmPrescription });
+  return Object.freeze({ assessPrescriptionRisk, confirmAndCreate });
 }
 
-module.exports = { createRiskPreviewService, RiskPreviewError, RISK_PREVIEW_EXPIRED_MESSAGE };
+module.exports = { createRiskAssessmentService, RiskPreviewError, RISK_PREVIEW_EXPIRED_MESSAGE };

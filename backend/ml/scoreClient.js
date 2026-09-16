@@ -16,8 +16,9 @@
  *   Callers (Step 3) catch AIServiceError and hand decideTrust a null risk result → Review "riskEngineUnavailable".
  *   NOT converted: ScoringPayloadError (e.g. VERSION_NOT_FOUND) and database errors — those are not AI outages.
  *
- * Config: AI_SERVICE_URL (default http://127.0.0.1:8000 — uvicorn listens on IPv4 localhost),
- *         AI_SERVICE_TIMEOUT_MS (default 2000).
+ * Config: RISK_ENGINE_URL (the older AI_SERVICE_URL is still honoured) — default http://127.0.0.1:8000, deliberately not
+ *         "localhost", which can resolve to IPv6 ::1 while uvicorn listens on IPv4;
+ *         AI_SERVICE_TIMEOUT_MS (default 3000).
  */
 
 const path = require('path');
@@ -25,7 +26,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../.env'), quiet: t
 const { createScoringPayloadBuilder } = require('./buildScoringPayload');
 
 const DEFAULT_AI_SERVICE_URL = 'http://127.0.0.1:8000';
-const DEFAULT_TIMEOUT_MS = 2000;
+const DEFAULT_TIMEOUT_MS = 3000;
 const AI_SERVICE_UNAVAILABLE = 'AI_SERVICE_UNAVAILABLE';
 const RISK_BANDS = new Set(['low', 'review', 'high']);
 const REASON_SOURCES = new Set(['rule_engine', 'ml_model']);
@@ -86,7 +87,7 @@ function createScoreClient(
   pool,
   {
     payloadBuilder = createScoringPayloadBuilder(pool),
-    baseUrl = process.env.AI_SERVICE_URL || DEFAULT_AI_SERVICE_URL,
+    baseUrl = process.env.RISK_ENGINE_URL || process.env.AI_SERVICE_URL || DEFAULT_AI_SERVICE_URL,
     timeoutMs = Number(process.env.AI_SERVICE_TIMEOUT_MS) || DEFAULT_TIMEOUT_MS,
     fetchImpl = globalThis.fetch,
   } = {},

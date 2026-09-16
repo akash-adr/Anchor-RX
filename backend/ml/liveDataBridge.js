@@ -16,7 +16,7 @@
  *   duplication  ACTIVE versions only; a prescription has at most one active version, so it was already per prescription.
  *
  * Status in the scoring flow (Module 16 Step 2):
- *   - buildFeatureInputs feeds drug_combination_flag and patient_velocity into POST /api/prescriptions/preview-risk.
+ *   - buildFeatureInputs feeds drug_combination_flag and patient_velocity into POST /api/prescriptions/assess-risk.
  *   - HELD: drug_rarity_score / provider_rarity_score are computed but NOT sent to the AI service. Their live definitions
  *     differ from what the trained Isolation Forest expects (measured on 600 normal corpus prescriptions: Review went
  *     from 1 to 20), and renaming provider_pattern_score breaks the saved pipeline. Python keeps its corpus-derived
@@ -123,7 +123,7 @@ function createLiveDataBridge(pool) {
   }
 
   /**
-   * Step 2: real feature inputs for EVERY medicine of a draft prescription, in the draft's order.
+   * Real feature inputs for EVERY medicine of a draft prescription, in the draft's order.
    *
    * @param {object} prescriptionDraft { patientId, providerId, heightCm?, weightKg?,
    *        medicines: [{ drugName, drugClass, doseValue, doseUnit, frequency, duration }],
@@ -131,8 +131,8 @@ function createLiveDataBridge(pool) {
    * @returns {Promise<object[]>} one object per medicine. Keys use Python's EXISTING feature names
    *        (drug_combination_flag, patient_velocity, drug_rarity_score) plus provider_rarity_score, and carry the
    *        medicine's own dose/frequency/duration and the shared height/weight. doseValue stays the exact string.
-   *        All four queries run for each medicine (velocity is per patient, so it is the same for every medicine).
-   * Read-only: writes nothing.
+   * Queries: getPatientVelocity30d ONCE (it is per patient); then checkDrugClassDuplication, getProviderRarityScore and
+   * getDrugRarityScore for each medicine, all medicines concurrently. Read-only: writes nothing.
    */
   async function buildFeatureInputs(prescriptionDraft) {
     if (prescriptionDraft === null || typeof prescriptionDraft !== 'object' || Array.isArray(prescriptionDraft)) {
@@ -148,32 +148,33 @@ function createLiveDataBridge(pool) {
       requireText(`medicines[${index}].drugClass`, medicine.drugClass);
     });
 
-    const features = [];
-    for (const [index, medicine] of medicines.entries()) {
-      const others = medicines.filter((_, otherIndex) => otherIndex !== index);
-      const [drugCombinationFlag, patientVelocity, providerRarity, drugRarity] = await Promise.all([
-        checkDrugClassDuplication(patientId, medicine.drugClass, existingPrescriptionVersionId, others),
-        getPatientVelocity30d(patientId),
-        getProviderRarityScore(providerId, medicine.drugClass),
-        getDrugRarityScore(medicine.drugName),
-      ]);
-      features.push({
-        medicine_index: index,
-        drug_name: medicine.drugName,
-        drug_class: medicine.drugClass,
-        dose_value: medicine.doseValue, // exact decimal string — never parsed here
-        dose_unit: medicine.doseUnit,
-        frequency: medicine.frequency,
-        duration_days: medicine.duration,
-        height_cm: heightCm === null || heightCm === undefined ? null : Number(heightCm),
-        weight_kg: weightKg === null || weightKg === undefined ? null : Number(weightKg),
-        drug_combination_flag: drugCombinationFlag, // ← checkDrugClassDuplication (Python's existing key)
-        patient_velocity: patientVelocity, // ← getPatientVelocity30d (Python's existing key)
-        drug_rarity_score: drugRarity, // ← getDrugRarityScore
-        provider_rarity_score: providerRarity, // ← getProviderRarityScore
-      });
-    }
-    return features;
+    const patientVelocity = await getPatientVelocity30d(patientId); // once for the whole prescription
+
+    return Promise.all(
+      medicines.map(async (medicine, index) => {
+        const others = medicines.filter((_, otherIndex) => otherIndex !== index);
+        const [drugCombinationFlag, providerRarity, drugRarity] = await Promise.all([
+          checkDrugClassDuplication(patientId, medicine.drugClass, existingPrescriptionVersionId, others),
+          getProviderRarityScore(providerId, medicine.drugClass),
+          getDrugRarityScore(medicine.drugName),
+        ]);
+        return {
+          medicine_index: index,
+          drug_name: medicine.drugName,
+          drug_class: medicine.drugClass,
+          dose_value: medicine.doseValue, // exact decimal string — never parsed here
+          dose_unit: medicine.doseUnit,
+          frequency: medicine.frequency,
+          duration_days: medicine.duration,
+          height_cm: heightCm === null || heightCm === undefined ? null : Number(heightCm),
+          weight_kg: weightKg === null || weightKg === undefined ? null : Number(weightKg),
+          drug_combination_flag: drugCombinationFlag, // ← checkDrugClassDuplication (Python's existing key)
+          patient_velocity: patientVelocity, // ← getPatientVelocity30d, shared by every medicine (Python's existing key)
+          drug_rarity_score: drugRarity, // ← getDrugRarityScore
+          provider_rarity_score: providerRarity, // ← getProviderRarityScore
+        };
+      }),
+    );
   }
 
   return Object.freeze({ checkDrugClassDuplication, getPatientVelocity30d, getProviderRarityScore, getDrugRarityScore, buildFeatureInputs });

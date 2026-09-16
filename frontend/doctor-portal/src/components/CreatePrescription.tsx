@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { ApiError, confirmPrescription, getPatients, previewPrescriptionRisk } from '../api';
+import { ApiError, assessPrescriptionRisk, confirmAndCreatePrescription, getDrugReference, getPatients } from '../api';
 import { useCurrentProvider } from '../context/ProviderContext';
-import type { CreatedPrescription, NewPrescription, Patient, RiskPreview } from '../types';
+import { autofillFrom, findReferenceEntry } from '../drugReference';
+import type { CreatedPrescription, DrugReference, NewPrescription, Patient, RiskPreview } from '../types';
 import ConfirmationCard from './ConfirmationCard';
 import ErrorNotice, { toApiError } from './ErrorNotice';
 import { DosageUnitInput, Field, TextInput, inputClass } from './formControls';
@@ -23,9 +24,13 @@ interface MedicineForm {
   frequency: string;
   durationDays: string;
   quantityPrescribed: string;
+  // UI state only — never sent. The reference drug name this block was autofilled from; while set, drugClass is
+  // read-only (it came from the reference, protecting the exact-string duplication check from typos).
+  matchedDrug: string | null;
 }
 
-type MedicineField = Exclude<keyof MedicineForm, 'key'>;
+type MedicineField = Exclude<keyof MedicineForm, 'key' | 'matchedDrug'>;
+const AUTOFILLED_FIELDS = ['dosageValue', 'dosageUnit', 'frequency', 'durationDays', 'drugClass'] as const;
 
 interface FormState {
   patientId: string;
@@ -44,6 +49,7 @@ const emptyMedicine = (key: number): MedicineForm => ({
   frequency: '',
   durationDays: '',
   quantityPrescribed: '',
+  matchedDrug: null,
 });
 
 const emptyForm = (key: number): FormState => ({ patientId: '', heightCm: '', weightKg: '', medicines: [emptyMedicine(key)] });
@@ -106,6 +112,22 @@ export default function CreatePrescription({ onAmend }: { onAmend?: (prescriptio
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<ApiError | null>(null);
   const previewRequest = useRef(0); // a preview response that arrives after the doctor has moved on is ignored
+  // Autofill source, loaded once. null (still loading, or unavailable) = fully manual entry, exactly as before.
+  const [drugReference, setDrugReference] = useState<DrugReference | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getDrugReference()
+      .then((reference) => {
+        if (!cancelled) setDrugReference(reference);
+      })
+      .catch(() => {
+        /* reference unavailable: the form simply stays manual */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const loadPatients = useCallback(async () => {
     setPatients({ status: 'loading' });
@@ -128,6 +150,30 @@ export default function CreatePrescription({ onAmend }: { onAmend?: (prescriptio
   const updateMedicine = (medicineKey: number, field: MedicineField, value: string) => {
     setForm((prev) => ({ ...prev, medicines: prev.medicines.map((m) => (m.key === medicineKey ? { ...m, [field]: value } : m)) }));
     setFieldErrors((prev) => ({ ...prev, medicines: { ...prev.medicines, [medicineKey]: { ...prev.medicines[medicineKey], [field]: undefined } } }));
+  };
+
+  /**
+   * Drug name changes re-evaluate the reference match fresh every time. On becoming a match for a (different) known
+   * drug, the block's dose, unit, frequency, duration and class are filled from the reference; all but class stay
+   * editable. Staying on the same match never overwrites the doctor's edits. No match → the lock is released and
+   * nothing is filled: fully manual, as before.
+   */
+  const updateDrugName = (medicineKey: number, value: string) => {
+    const entry = findReferenceEntry(drugReference, value);
+    const matchedName = entry ? value.trim() : null;
+    setForm((prev) => ({
+      ...prev,
+      medicines: prev.medicines.map((m) => {
+        if (m.key !== medicineKey) return m;
+        if (entry && m.matchedDrug !== matchedName) return { ...m, drugName: value, ...autofillFrom(entry), matchedDrug: matchedName };
+        return { ...m, drugName: value, matchedDrug: matchedName };
+      }),
+    }));
+    setFieldErrors((prev) => {
+      const cleared: MedicineErrors = { ...prev.medicines[medicineKey], drugName: undefined };
+      if (entry) for (const field of AUTOFILLED_FIELDS) cleared[field] = undefined;
+      return { ...prev, medicines: { ...prev.medicines, [medicineKey]: cleared } };
+    });
   };
 
   const addMedicine = () => {
@@ -168,13 +214,13 @@ export default function CreatePrescription({ onAmend }: { onAmend?: (prescriptio
     };
   };
 
-  /** Always a FRESH preview-risk call from the current form: nothing from a discarded or expired preview carries over. */
+  /** Always a FRESH assess-risk call from the current form: nothing from a discarded or expired preview carries over. */
   const runPreview = async (onError: (error: ApiError) => void) => {
     const requestId = ++previewRequest.current;
     const submission = buildSubmission();
     setSubmitting(true);
     try {
-      const preview = await previewPrescriptionRisk(submission); // scores every medicine; saves nothing
+      const preview = await assessPrescriptionRisk(submission); // scores every medicine; saves nothing
       if (requestId !== previewRequest.current) return;
       setConfirmError(null);
       setReview({ preview, submission });
@@ -200,7 +246,7 @@ export default function CreatePrescription({ onAmend }: { onAmend?: (prescriptio
     setConfirmError(null);
     try {
       // The token ONLY — the server creates the prescription from its cached copy, with exactly the risk shown here.
-      const created = await confirmPrescription(review.preview.previewToken);
+      const created = await confirmAndCreatePrescription(review.preview.previewToken);
       setResult(created);
       setReview(null);
       setForm(emptyForm(nextKey.current++));
@@ -261,6 +307,16 @@ export default function CreatePrescription({ onAmend }: { onAmend?: (prescriptio
         Issued by <span className="font-medium text-slate-800">{provider.name}</span>. On authorization every field is hashed and
         the integrity root is anchored to the ledger. You'll review the AI risk for every medicine before anything is saved.
       </p>
+
+      {drugReference && (
+        <datalist id="drug-reference-names">
+          {Object.keys(drugReference)
+            .sort()
+            .map((name) => (
+              <option key={name} value={name} />
+            ))}
+        </datalist>
+      )}
 
       <form onSubmit={onSubmit} noValidate className="mt-6 space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <Field label="Patient" htmlFor="patient" error={fieldErrors.top.patientId}>
@@ -346,11 +402,42 @@ export default function CreatePrescription({ onAmend }: { onAmend?: (prescriptio
               </legend>
 
               <div className="grid gap-6 sm:grid-cols-2">
-                <Field label="Drug name" htmlFor={id('drugName')} error={errors.drugName}>
-                  <TextInput id={id('drugName')} value={medicine.drugName} onChange={(v) => updateMedicine(medicine.key, 'drugName', v)} placeholder="e.g. Amoxicillin" disabled={submitting} invalid={Boolean(errors.drugName)} />
+                <Field
+                  label="Drug name"
+                  htmlFor={id('drugName')}
+                  error={errors.drugName}
+                  hint={drugReference ? 'Pick a known drug to autofill, or type any other name' : undefined}
+                >
+                  <TextInput
+                    id={id('drugName')}
+                    value={medicine.drugName}
+                    onChange={(v) => updateDrugName(medicine.key, v)}
+                    placeholder="e.g. Amoxicillin"
+                    disabled={submitting}
+                    invalid={Boolean(errors.drugName)}
+                    list={drugReference ? 'drug-reference-names' : undefined}
+                    autoComplete="off"
+                  />
                 </Field>
-                <Field label="Drug class" htmlFor={id('drugClass')} error={errors.drugClass}>
-                  <TextInput id={id('drugClass')} value={medicine.drugClass} onChange={(v) => updateMedicine(medicine.key, 'drugClass', v)} placeholder="e.g. penicillin antibiotic" disabled={submitting} invalid={Boolean(errors.drugClass)} />
+                <Field
+                  label="Drug class"
+                  htmlFor={id('drugClass')}
+                  error={errors.drugClass}
+                  hint={medicine.matchedDrug ? `Set from the drug reference for ${medicine.matchedDrug} — change the drug name to edit` : undefined}
+                >
+                  {medicine.matchedDrug ? (
+                    <input
+                      id={id('drugClass')}
+                      type="text"
+                      value={medicine.drugClass}
+                      readOnly
+                      data-testid={`drug-class-locked-${position}`}
+                      aria-describedby={`${id('drugClass')}-hint`}
+                      className={`${inputClass(false)} cursor-not-allowed bg-slate-100 text-slate-700`}
+                    />
+                  ) : (
+                    <TextInput id={id('drugClass')} value={medicine.drugClass} onChange={(v) => updateMedicine(medicine.key, 'drugClass', v)} placeholder="e.g. penicillin antibiotic" disabled={submitting} invalid={Boolean(errors.drugClass)} />
+                  )}
                 </Field>
               </div>
 

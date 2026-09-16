@@ -23,7 +23,7 @@ import type {
   RevokeResult,
   RiskPreview,
   ScanResult,
-} from './types';
+ DrugReference } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '';
 
@@ -106,17 +106,26 @@ export function createPrescription(data: NewPrescription): Promise<CreatedPrescr
   return request('POST', '/api/prescriptions', data);
 }
 
-/** Module 15 step 1: score every medicine. Saves NOTHING; returns a single-use token valid for 10 minutes. */
-export function previewPrescriptionRisk(data: NewPrescription): Promise<RiskPreview> {
-  return request('POST', '/api/prescriptions/preview-risk', data);
+/** Medicine autofill source: the AI service's DRUG_REFERENCE, relayed unchanged (and cached) by Node. */
+export function getDrugReference(): Promise<DrugReference> {
+  return request('GET', '/api/drug-reference');
 }
 
 /**
- * Module 15 step 2: create the previewed prescription with its risk locked. Sends ONLY the token — the server uses its
- * cached copy of the prescription and risk. 410 RISK_PREVIEW_EXPIRED if the token is expired, used, or unknown.
+ * "Authorize & anchor": score every medicine. Saves NOTHING; returns a single-use token valid for 10 minutes.
+ * A medicine the AI service could not score comes back with riskBand 'unavailable' and riskScore null.
  */
-export function confirmPrescription(previewToken: string): Promise<CreatedPrescription> {
-  return request('POST', '/api/prescriptions/confirm', { previewToken });
+export function assessPrescriptionRisk(data: NewPrescription): Promise<RiskPreview> {
+  return request('POST', '/api/prescriptions/assess-risk', data);
+}
+
+/**
+ * "Confirm & Authorize": create the assessed prescription with its risk locked. Sends ONLY the token — the server uses
+ * its cached copy of the prescription and risk results (never recomputed, never resent from here).
+ * 410 RISK_PREVIEW_EXPIRED if the token is expired, used, or unknown.
+ */
+export function confirmAndCreatePrescription(previewToken: string): Promise<CreatedPrescription> {
+  return request('POST', '/api/prescriptions/confirm-and-create', { previewToken });
 }
 
 export function amendPrescription(

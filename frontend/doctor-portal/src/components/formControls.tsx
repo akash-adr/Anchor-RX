@@ -44,11 +44,15 @@ export function TextInput(props: {
   placeholder?: string;
   disabled?: boolean;
   invalid?: boolean;
+  list?: string; // id of a <datalist> offering suggestions; any other text is still allowed
+  autoComplete?: string;
 }) {
   return (
     <input
       id={props.id}
       type="text"
+      list={props.list}
+      autoComplete={props.autoComplete}
       value={props.value}
       onChange={(e) => props.onChange(e.target.value)}
       placeholder={props.placeholder}

@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Module 16 Step 2 — POST /api/prescriptions/preview-risk runs liveDataBridge.buildFeatureInputs FIRST and scores with
+ * Module 16 Step 2 — POST /api/prescriptions/assess-risk runs liveDataBridge.buildFeatureInputs FIRST and scores with
  * its live drug_combination_flag / patient_velocity. Real anchor_rx_test data; the AI service is a recording stub.
  */
 
@@ -83,7 +83,7 @@ beforeEach(async () => {
 });
 
 async function preview(body) {
-  const response = await fetch(`${baseUrl}/api/prescriptions/preview-risk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const response = await fetch(`${baseUrl}/api/prescriptions/assess-risk`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   return { status: response.status, body: await response.json() };
 }
 
@@ -115,8 +115,8 @@ test('patient with an ACTIVE same-class prescription → buildFeatureInputs runs
   payloads.forEach((p) => expect(Object.keys(p)).toEqual(CONTRACT_KEYS));
 
   expect(result.body.medicines).toEqual([
-    { drugName: 'Simvastatin', riskScore: 25, riskBand: 'low', reasons: [DUPLICATION_REASON] },
-    { drugName: 'Cetirizine', riskScore: 4, riskBand: 'low', reasons: [] },
+    { medicineIndex: 0, drugName: 'Simvastatin', riskScore: 25, riskBand: 'low', reasons: [DUPLICATION_REASON] },
+    { medicineIndex: 1, drugName: 'Cetirizine', riskScore: 4, riskBand: 'low', reasons: [] },
   ]);
   const [[after]] = await pool.query('SELECT (SELECT COUNT(*) FROM prescription_version) AS v, (SELECT COUNT(*) FROM prescription_medicine) AS m');
   expect(after).toEqual(before); // preview still writes nothing

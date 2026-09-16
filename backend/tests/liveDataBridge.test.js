@@ -222,7 +222,7 @@ describe('buildFeatureInputs', () => {
     expect(Object.keys(features[0])).toEqual(expect.arrayContaining(['drug_combination_flag', 'patient_velocity', 'drug_rarity_score', 'provider_rarity_score']));
     expect(Object.keys(features[0]).some((key) => /duplication|velocity30d|pattern/i.test(key))).toBe(false);
 
-    expect(statements).toHaveLength(3 * 4); // all four queries, for each of the 3 medicines
+    expect(statements).toHaveLength(1 + 3 * 3); // patient velocity ONCE, then duplication + both rarity queries per medicine
     const [[after]] = await pool.query('SELECT (SELECT COUNT(*) FROM prescription_version) AS v, (SELECT COUNT(*) FROM prescription_medicine) AS m');
     expect(after).toEqual(before); // read-only
   });

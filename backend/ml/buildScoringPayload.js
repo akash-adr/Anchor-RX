@@ -156,7 +156,7 @@ function createScoringPayloadBuilder(
    *        versionNumber?, referenceTime? (defaults to now), route? }
    * @throws {ScoringPayloadError} PATIENT_NOT_FOUND
    */
-  async function buildSharedContext({ patientId, providerId, heightCm = null, weightKg = null, prescriptionId = null, versionNumber = null, referenceTime = null, route = DEFAULT_ROUTE }) {
+  async function buildSharedContext({ patientId, providerId, heightCm = null, weightKg = null, prescriptionId = null, versionNumber = null, referenceTime = null, route = DEFAULT_ROUTE, knownPatientVelocity = null }) {
     const patient = await featureRepository.getPatient(patientId);
     if (!patient) {
       throw new ScoringPayloadError('PATIENT_NOT_FOUND', `Patient ${patientId} does not exist`);
@@ -166,7 +166,8 @@ function createScoringPayloadBuilder(
     const [activePrescriptionDrugClasses, providerDrugClassHistory, patientVelocity] = await Promise.all([
       featureRepository.getActiveDrugClassesForPatient(patientId, prescriptionId),
       featureRepository.getProviderDrugClassHistory(providerId, prescriptionId),
-      featureRepository.countRecentPatientPrescriptions(patientId, reference, prescriptionId, VELOCITY_WINDOW_DAYS),
+      // Already computed once for this prescription (live data bridge)? Reuse it instead of a second velocity query.
+      knownPatientVelocity !== null ? knownPatientVelocity : featureRepository.countRecentPatientPrescriptions(patientId, reference, prescriptionId, VELOCITY_WINDOW_DAYS),
     ]);
 
     // Weight precedence: recorded on THIS prescription (Module 14) → patient record → documented placeholder.

@@ -14,18 +14,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-# ⚠ READ BEFORE USING THESE NUMBERS
-# - These are simplified, commonly-cited adult general-population typical ranges for demonstration purposes only —
-#   not individualized clinical dosing, which varies by renal/hepatic function, indication, age, and other
-#   patient-specific factors in real practice.
-# - "Diphenhydramine" (marketed as Benadryl syrup in this demo's seed data) uses dosage_unit "ml" because it's a liquid
-#   formulation at a standard 12.5mg/5ml concentration — its dose_min/dose_max are expressed directly in ml, not mg, so
-#   downstream code must compare a prescription's dosage_value against this reference using the SAME unit (check
-#   dosage_unit before comparing dose_min/dose_max — do not assume mg for every drug).
-# - "Zytee" is deliberately NOT included in this table. It's a topical oral gel (used for teething/mouth-ulcer pain
-#   relief), not a systemic oral/IV medication with a comparable dose-per-kg or typical adult dose range. If a
-#   prescription uses this drug name, it falls through to the existing "unknown drug" neutral-fallback behavior already
-#   built into feature extraction — no fabricated quantitative range is invented for it.
+# Simplified, commonly-cited adult general-population typical ranges for demonstration purposes only — not individualized clinical dosing.
+# "Diphenhydramine" (Benadryl syrup in this demo's seed data) is a liquid formulation — dosage_unit is "ml", not "mg". Downstream code MUST check dosage_unit before comparing dose_min/dose_max against a prescription's value.
+# "Zytee" is deliberately excluded — it's a topical oral gel with no comparable systemic dose-per-kg or typical-adult-dose concept. A prescription for it should fall through to the existing unknown-drug neutral-fallback path in feature extraction, not a fabricated quantitative range.
 DRUG_REFERENCE = {
     "Amoxicillin": {"dose_min": 250, "dose_max": 500, "dosage_unit": "mg", "dose_per_kg_max": 25, "freq_min": 2, "freq_max": 3, "dur_min": 5, "dur_max": 14, "drug_class": "antibiotic"},
     "Azithromycin": {"dose_min": 250, "dose_max": 500, "dosage_unit": "mg", "dose_per_kg_max": 12, "freq_min": 1, "freq_max": 1, "dur_min": 3, "dur_max": 5, "drug_class": "antibiotic"},
