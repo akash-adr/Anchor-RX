@@ -15,3 +15,6 @@ __pycache__/
 
 # os / editor
 .DS_Store
+
+# local safety-net copies of pre-retraining artifacts (not submission material)
+/backups/
